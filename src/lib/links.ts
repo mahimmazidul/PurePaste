@@ -81,3 +81,53 @@ export async function createLink(input: CreateLinkInput): Promise<CreateLinkResu
   }
   return { ok: false, status: 500, error: "Could not save that link — please try again." };
 }
+
+export async function getLinkRow(id: string): Promise<LinkRow | null> {
+  const rows = await db.select().from(links).where(eq(links.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getLiveLink(id: string): Promise<LinkRow | null> {
+  const row = await getLinkRow(id);
+  if (!row) return null;
+  if (row.expiresAt.getTime() <= Date.now()) {
+    await db.delete(links).where(eq(links.id, id)).catch(() => {});
+    return null;
+  }
+  return row;
+}
+
+export function toLinkPayload(row: LinkRow): LinkPayload {
+  return {
+    id: row.id,
+    url: row.url,
+    burn: row.burn,
+    visits: row.visits,
+    createdAt: row.createdAt.toISOString(),
+    expiresAt: row.expiresAt.toISOString(),
+  };
+}
+
+/** Counts a visit and returns the destination; burns the link if flagged. */
+export async function visitLink(id: string): Promise<LinkPayload | null> {
+  const row = await getLiveLink(id);
+  if (!row) return null;
+  await db
+    .update(links)
+    .set({ visits: sql`${links.visits} + 1` })
+    .where(eq(links.id, id));
+  const payload = toLinkPayload({ ...row, visits: row.visits + 1 });
+  if (row.burn) {
+    await db.delete(links).where(eq(links.id, id)).catch(() => {});
+  }
+  return payload;
+}
+
+export async function deleteLink(id: string, token: string): Promise<boolean> {
+  if (!token) return false;
+  const result = await db
+    .delete(links)
+    .where(and(eq(links.id, id), eq(links.manageToken, token)))
+    .returning({ id: links.id });
+  return result.length > 0;
+}
