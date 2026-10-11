@@ -19,22 +19,84 @@ describe("link mode", () => {
 		const created = await readJson<{ id: string; kind: string; url: string }>(response);
 		expect(created.kind).toBe("redirect");
 
-		const page = await request(`/${created.id}`);
+		const page = await request(`/l/${created.id}`);
 		const html = await page.text();
 
-		// No automatic redirect: the visitor decides.
+		// No automatic redirect: the visitor decides, with a deliberate POST.
 		expect(page.status).toBe(200);
-		expect(html).toContain("This link goes somewhere else");
+		expect(html).toContain("A short, honest hop.");
 		expect(html).toContain("example.com");
 		expect(html).toContain("https://example.com/a/b?c=d#e");
-		expect(html).toContain('rel="noopener noreferrer nofollow"');
+		expect(html).toContain(`action="/l/${created.id}/go"`);
+		expect(html).toContain('method="post"');
+
+		// The legacy bare path forwards to the interstitial, never to the destination.
+		const legacy = await request(`/${created.id}`, { redirect: "manual" });
+		expect(legacy.status).toBe(302);
+		expect(legacy.headers.get("Location")).toBe(`/l/${created.id}`);
 	});
 
-	it("never redirects on its own from the paste page", async () => {
+	it("never redirects on its own from the interstitial", async () => {
 		const created = await readJson<{ id: string }>(await makeRedirect("https://example.com/"));
-		const response = await request(`/${created.id}`, { redirect: "manual" });
+		const response = await request(`/l/${created.id}`, { redirect: "manual" });
 		expect(response.status).toBe(200);
 		expect(response.headers.get("Location")).toBeNull();
+	});
+
+	it("counts the visit and hands over the destination on continue", async () => {
+		const created = await readJson<{ id: string }>(await makeRedirect("https://example.com/go"));
+		const go = await request(`/l/${created.id}/go`, { method: "POST", redirect: "manual" });
+		expect(go.status).toBe(302);
+		expect(go.headers.get("Location")).toBe("https://example.com/go");
+
+		const reveal = await request(`/api/links/${created.id}/reveal`, {
+			method: "POST",
+			headers: { Accept: "application/json" },
+		});
+		expect(reveal.status).toBe(200);
+		const body = await readJson<{ link: { url: string; visits: number; burn: boolean } }>(reveal);
+		expect(body.link.url).toBe("https://example.com/go");
+		expect(body.link.visits).toBe(2);
+		expect(body.link.burn).toBe(false);
+	});
+
+	it("seals a link through /api/links with slip-style lifetimes", async () => {
+		const response = await request("/api/links", {
+			method: "POST",
+			body: JSON.stringify({ url: "https://example.com/slip", expiry: "1w" }),
+			headers: { "Content-Type": "application/json", Accept: "application/json" },
+		});
+		expect(response.status).toBe(201);
+		const created = await readJson<{ id: string; url: string; manageToken: string }>(response);
+		expect(created.url).toContain(`/l/${created.id}`);
+		expect(typeof created.manageToken).toBe("string");
+		const row = await readRow(created.id);
+		const days = (Number(row?.expires_at) - Number(row?.created_at)) / 86_400_000;
+		expect(days).toBeCloseTo(7, 1);
+	});
+
+	it("burns a link on the first continue", async () => {
+		const response = await request("/api/links", {
+			method: "POST",
+			body: JSON.stringify({ url: "https://example.com/once", burn: true, expiry: "1d" }),
+			headers: { "Content-Type": "application/json", Accept: "application/json" },
+		});
+		const created = await readJson<{ id: string }>(response);
+
+		// The sealed interstitial keeps the destination to itself.
+		const page = await request(`/l/${created.id}`);
+		const html = await page.text();
+		expect(page.status).toBe(200);
+		expect(html).toContain("after one visit");
+		expect(html).not.toContain("https://example.com/once");
+
+		const go = await request(`/l/${created.id}/go`, { method: "POST", redirect: "manual" });
+		expect(go.status).toBe(302);
+		expect(go.headers.get("Location")).toBe("https://example.com/once");
+
+		const again = await request(`/l/${created.id}/go`, { method: "POST", redirect: "manual" });
+		expect(again.status).toBe(410);
+		expect(await again.text()).toContain("kept its promise");
 	});
 
 	it("hands the destination to terminal users as plain text", async () => {
@@ -100,9 +162,10 @@ describe("link mode", () => {
 		expect(created.id).toMatch(/^[a-z0-9]{10}$/);
 	});
 
-	it("renders the homepage link form only when the feature is on", async () => {
+	it("offers the link tab on the homepage only when the feature is on", async () => {
 		const html = await (await request("/")).text();
-		expect(html).toContain("Sharing a link?");
+		expect(html).toContain("A link");
+		expect(html).toContain('name="kind" value="redirect"');
 		expect(testConfig.redirectEnabled).toBe(true);
 	});
 

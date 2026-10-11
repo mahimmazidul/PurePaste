@@ -1,5 +1,5 @@
 import { initCreatePage } from "./pages/create";
-import { initCreatedPage, initHistoryPage } from "./pages/history";
+import { initCreatedPage, initLocalList } from "./pages/local-list";
 import { initManagePage } from "./pages/manage";
 import { initThemeControl } from "./pages/theme";
 import { initViewer, wireCopyButtons } from "./pages/viewer";
@@ -15,6 +15,7 @@ function boot(): void {
 	switch (document.body.dataset.page) {
 		case "home":
 			initCreatePage();
+			initLocalList();
 			break;
 		case "created":
 			initCreatedPage();
@@ -25,10 +26,8 @@ function boot(): void {
 		case "manage":
 			initManagePage();
 			break;
-		case "history":
-			initHistoryPage();
-			break;
 		default:
+			// link, docs, about, licenses, error: the markup is the whole feature.
 			break;
 	}
 }

@@ -40,7 +40,7 @@ describe("password protection", () => {
 		const html = await response.text();
 
 		expect(response.status).toBe(200);
-		expect(html).toContain("This paste is protected");
+		expect(html).toContain("A locked slip.");
 		expect(html).not.toContain("classified contents");
 		expect(html).not.toContain("Secret notes");
 		expect(html).not.toContain(material.verifier);

@@ -80,7 +80,12 @@ export function parseRedirectUrl(raw: unknown): string {
 
 export function parseExpiration(raw: unknown, config: Config): number {
 	if (raw === null || raw === undefined || raw === "") return config.defaultTtlSeconds;
-	const value = String(raw).trim().toLowerCase();
+	let value = String(raw).trim().toLowerCase();
+
+	// Slip-style lifetime keys are accepted as aliases of the canonical menu.
+	const aliases: Record<string, string> = { "1w": "7d", "1week": "7d", "1mo": "30d", "1month": "30d" };
+	const alias = aliases[value];
+	if (alias) value = alias;
 
 	const choice = config.ttlChoices.find((option) => option.value === value);
 	if (choice) return choice.seconds;

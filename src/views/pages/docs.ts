@@ -68,7 +68,7 @@ export function renderApiDocs(options: ApiDocsOptions): string {
 			["Opaque bytes", code("application/octet-stream"), `With ${code("?encrypted=1")} the bytes are stored untouched, or as the ${code("payload")} part of a form.`],
 		],
 	)}
-	<p class="field-note">Options, in the JSON body, form fields or query string: ${code("title")}, ${code("language")}, ${code("expire")} (or ${code("ttl")}), ${code("slug")}, ${code("burn")}, ${code("markdown")}, ${code("password_salt")}, ${code("password_verifier")}, ${code("password_iterations")}. Expiry accepts ${config.ttlChoices.map((choice) => code(choice.value)).join(", ")} or bare seconds, clamped to ${code(`${config.maxTtlSeconds}`)}.</p>
+	<p class="field-note">Options, in the JSON body, form fields or query string: ${code("title")}, ${code("language")}, ${code("expire")} (or ${code("ttl")}), ${code("slug")}, ${code("burn")}, ${code("markdown")}, ${code("password_salt")}, ${code("password_verifier")}, ${code("password_iterations")}. Expiry accepts ${config.ttlChoices.map((choice) => code(choice.value)).join(", ")}, the aliases ${code("1w")} and ${code("1mo")}, or bare seconds — clamped to ${code(`${config.maxTtlSeconds}`)}.</p>
 	${snippet(
 		`# A bare URL back — the friendliest thing for a shell script\necho "hello from a pipe" | curl -s -X POST --data-binary @- \\\n  -H "Content-Type: text/plain" -H "Accept: text/plain" \\\n  ${origin}/api/pastes`,
 		"text from a pipe",
@@ -106,6 +106,7 @@ export function renderApiDocs(options: ApiDocsOptions): string {
 	${endpoint("get", "/raw/<id>", "the body itself (also at /<id>/raw)")}
 	${endpoint("get", "/download/<id>", "as an attachment (also at /<id>/download)")}
 	${endpoint("get", "/api/config", "this instance's limits, features and TTL menu")}
+	<p class="field-note">Pages: slips live at <span class="mono">/p/&lt;id&gt;</span>, links at <span class="mono">/l/&lt;id&gt;</span> (the bare <span class="mono">/&lt;id&gt;</span> still works and forwards). Deletion keys travel as <span class="mono">Authorization: Bearer</span> or <span class="mono">X-Manage-Token</span>.</p>
 	${snippet(
 		`curl -s ${origin}/api/pastes/<id>             # metadata\ncurl -s ${origin}/raw/<id>                       # the bytes\ncurl -s "${origin}/raw/<id>?format=json"         # {"id":…,"kind":"text","content":…}\ncurl -s -OJ ${origin}/download/<id>              # attachment, original filename\ncurl -s ${origin}/api/config                     # limits, features, TTL choices`,
 		"reading",
@@ -129,6 +130,33 @@ export function renderApiDocs(options: ApiDocsOptions): string {
 	${endpoint("post", "/api/pastes/<id>/reveal", "the single call that releases a one-time paste")}
 	${snippet(`curl -s -X POST ${origin}/api/pastes/<id>/reveal -H "Accept: application/json"`, "reveal once")}
 	<p>Before the reveal, ${code("GET /raw/<id>")} answers ${code("403")}. After it, everything answers ${code("410")}: the claim is a single atomic statement, so two simultaneous reveals cannot both win.</p>
+</section>
+
+
+<section class="card">
+	<h2 class="h2">Links</h2>
+	<p>A link is a short hop that shows its destination before it lands anyone. Links live at <span class="mono">/l/&lt;id&gt;</span> and count every visit; a burn link is spent by the first continuation.</p>
+	${endpoint("post", "/api/links", "seal a short hop")}
+	${endpoint("post", "/api/links/<id>/reveal", "count the visit, hand back the destination")}
+	${endpoint("get", "/api/links/<id>", "metadata (also DELETE with the management token)")}
+	${snippet(
+		`curl -s -X POST ${origin}/api/links \\
+  -H "Content-Type: application/json" \\
+  -d '{"url":"https://example.com/long/path","expiry":"1w","burn":false}'
+
+# The interstitial's continue button, as an API call:
+curl -s -X POST ${origin}/api/links/<id>/reveal`,
+		"links",
+	)}
+	<p class="field-note">The reveal answers <span class="mono">{"link":{"id":…,"url":…,"burn":…,"visits":…}}</span>. For a burn link the claim is atomic: the loser of a race gets <span class="mono">410</span>.</p>
+</section>
+
+<section class="card">
+	<h2 class="h2">Stats and health</h2>
+	${endpoint("get", "/api/stats", "live totals behind the front-page stat bar")}
+	${endpoint("get", "/api/health", "is this instance awake")}
+	${snippet(`curl -s ${origin}/api/stats\ncurl -s ${origin}/api/health`, "ops")}
+	<p class="field-note">Stats answers <span class="mono">{"slips":…,"links":…,"files":…,"bytes":…}</span> — only live, unspent items are counted.</p>
 </section>
 
 <section class="card">
@@ -182,6 +210,6 @@ export function renderApiDocs(options: ApiDocsOptions): string {
 		title: "API",
 		page: "docs",
 		body,
-		description: "The PurePaste HTTP API: create, read, unlock, reveal and delete pastes from anything that can speak curl.",
+		description: "The Slip HTTP API: seal, read, unlock, reveal and let go of slips, links and files from anything that can speak curl.",
 	});
 }

@@ -1,0 +1,3 @@
+Instrument Serif (roman + italic, latin + latin-ext subsets)
+Copyright 2022 The Instrument Serif Project Authors (https://github.com/Instrument/instrument-serif)
+Licensed under the SIL Open Font License 1.1 — https://openfontlicense.org

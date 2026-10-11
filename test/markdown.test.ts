@@ -130,7 +130,7 @@ describe("markdown on a real paste", () => {
 		expect(html).not.toContain("<img");
 		expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
 		// Nothing is rendered server-side: the output holder ships empty.
-		expect(html).toContain('<div class="markdown-body" data-markdown-output hidden></div>');
+		expect(html).toContain('<div class="md-view" data-markdown-output hidden></div>');
 	});
 
 	it("keeps the badges and meta honest about what it is", async () => {

@@ -1,13 +1,13 @@
 import type { Config } from "../../config";
-import { escapeHtml, formatBytes, formatDateTime, formatDisplayDateTime, formatExpiry } from "../../lib/format";
+import { escapeHtml, formatBytes, formatDateTime, formatDisplayDateTime, formatDuration } from "../../lib/format";
 import { languageLabel } from "../../lib/languages";
-import { button, icon, icons, metaRow, notice, renderLayout } from "../layout";
+import { icons, notice, renderLayout } from "../layout";
 import type { PasteRecord } from "../../types";
 
 export interface PastePageOptions {
 	config: Config;
 	record: PasteRecord;
-	/** Inline body for small pastes; null when the body lives in R2. */
+	/** Inline body for small pastes; null when the body lives in object storage. */
 	inline: string | null;
 	/** True when the visitor holds a valid unlock cookie or password header. */
 	unlocked: boolean;
@@ -16,141 +16,147 @@ export interface PastePageOptions {
 	flash?: { tone: "info" | "warn" | "success"; body: string } | null;
 }
 
-function pasteBadges(record: PasteRecord): string {
-	const badges: string[] = [];
-	if (record.encrypted) badges.push(`<span class="badge badge-pink">${icons.lock}Encrypted</span>`);
-	if (record.passwordVerifier) badges.push(`<span class="badge badge-pink">${icons.key}Password</span>`);
-	if (record.burnAfterRead) badges.push(`<span class="badge badge-pink">${icons.flame}Burn after opening</span>`);
-	if (record.markdown) badges.push(`<span class="badge badge-mint">Markdown</span>`);
-	if (record.kind === "redirect") badges.push(`<span class="badge badge-mint">${icons.link}Link</span>`);
-	return badges.length ? `<div class="badge-row">${badges.join("")}</div>` : "";
-}
-
-function titleFor(record: PasteRecord): string {
+export function titleFor(record: PasteRecord): string {
 	if (record.title) return record.title;
-	if (record.kind === "file") return record.filename ?? "File";
-	if (record.encrypted) return "Encrypted paste";
-	return "Untitled paste";
+	if (record.kind === "file") return record.filename ?? "A file";
+	if (record.encrypted) return "An encrypted slip";
+	return "Untitled slip";
 }
 
-function actionBar(record: PasteRecord, options: { showFork: boolean }): string {
-	const actions: string[] = [];
+/** The quiet one-line ledger under the title: what · when · for how long · how big. */
+function metaLine(record: PasteRecord, config: Config, now: number): string {
+	const parts: string[] = [];
 
-	// Copying the plaintext only makes sense when a plaintext body exists on this page.
-	actions.push(
-		button({
-			label: "Copy content",
-			iconName: "copy",
-			attributes: "data-copy-content data-js-only",
-			variant: "secondary",
-		}),
-	);
-	actions.push(
-		button({ label: "Copy link", iconName: "link", attributes: "data-copy-link data-js-only", variant: "secondary" }),
-	);
-	actions.push(
-		button({ label: "QR code", iconName: "qr", attributes: "data-qr-open data-js-only", variant: "secondary" }),
-	);
-
-	if (!record.encrypted) {
-		if (record.kind !== "redirect") {
-			actions.push(
-				`<a class="btn btn-secondary" href="${escapeHtml(`/${record.id}/raw`)}">${icon("raw")}<span>Raw</span></a>`,
-			);
-		}
-		if (record.kind === "file") {
-			actions.push(
-				`<a class="btn btn-secondary" href="${escapeHtml(`/${record.id}/download`)}">${icon("download")}<span>Download</span></a>`,
-			);
-		}
+	if (record.kind === "file") {
+		parts.push(`<span class="meta-chip">${icons.file}${escapeHtml(record.filename ?? "file")}</span>`);
+	} else if (record.markdown) {
+		parts.push(`<span class="meta-chip">${icons.file}Markdown</span>`);
+	} else if (record.kind === "text" && record.language) {
+		parts.push(`<span class="meta-chip">${icons.file}${escapeHtml(languageLabel(record.language))}</span>`);
 	}
-	if (options.showFork) {
+
+	parts.push(
+		`<span>sealed <time datetime="${escapeHtml(formatDateTime(record.createdAt))}" data-relative="${record.createdAt}">${escapeHtml(formatDisplayDateTime(record.createdAt))}</time></span>`,
+	);
+	parts.push(
+		`<span>fades <time datetime="${escapeHtml(formatDateTime(record.expiresAt))}" data-relative-expiry="${record.expiresAt}" data-relative-before="in">in ${escapeHtml(formatDuration(Math.max(0, Math.round((record.expiresAt - now) / 1000))))}</time></span>`,
+	);
+	if (config.viewCounting) {
+		parts.push(`<span class="meta-chip">${icons.eye}${record.views === 1 ? "1 read" : `${escapeHtml(String(record.views))} reads`}</span>`);
+	}
+	parts.push(`<span>${escapeHtml(formatBytes(record.sizeBytes))}</span>`);
+	if (record.passwordVerifier) {
+		parts.push(`<span class="meta-chip">${icons.key}password</span>`);
+	}
+	if (record.encrypted) {
+		parts.push(`<span class="meta-chip">${icons.lock}encrypted in-browser</span>`);
+	}
+	if (record.burnAfterRead) {
+		parts.push(`<span class="meta-chip meta-burn">${icons.flame}burns after reading</span>`);
+	}
+
+	return `<p class="paste-meta">${parts.join('<span class="meta-dot" aria-hidden="true">·</span>')}</p>`;
+}
+
+function actionBar(record: PasteRecord, options: { revealed: boolean }): string {
+	const actions: string[] = [];
+	const isText = record.kind === "text" && !record.encrypted;
+
+	if (isText || record.markdown) {
 		actions.push(
-			`<a class="btn btn-quiet" href="${escapeHtml(`/?fork=${record.id}`)}">${icon("fork")}<span>Fork</span></a>`,
+			`<button class="btn btn-secondary tool-btn" type="button" data-copy-content data-js-only>${icons.copy}<span>Copy</span></button>`,
 		);
 	}
+	actions.push(
+		`<button class="btn btn-secondary tool-btn" type="button" data-copy-link data-js-only>${icons.link}<span>Copy link</span></button>`,
+	);
+	if (isText && !record.markdown) {
+		actions.push(
+			`<button class="btn btn-secondary tool-btn" type="button" data-wrap-toggle data-js-only aria-pressed="false" title="Wrap long lines">${icons.wrap}<span>Wrap</span></button>`,
+		);
+	}
+	if (!record.encrypted) {
+		if (record.kind === "file") {
+			actions.push(
+				`<a class="btn btn-secondary tool-btn" href="${escapeHtml(`/download/${record.id}`)}">${icons.download}<span>Save</span></a>`,
+			);
+		} else if (isText) {
+			actions.push(
+				`<a class="btn btn-secondary tool-btn" href="${escapeHtml(`/p/${record.id}/download`)}">${icons.download}<span>Save</span></a>`,
+			);
+			if (!options.revealed) {
+				actions.push(
+					`<a class="btn btn-secondary tool-btn" href="${escapeHtml(`/p/${record.id}/raw`)}">${icons.raw}<span>Raw</span></a>`,
+				);
+			}
+		}
+	}
+	if (!record.encrypted && record.passwordVerifier === null && record.kind === "text") {
+		actions.push(
+			`<a class="btn btn-quiet tool-btn" href="${escapeHtml(`/?fork=${record.id}`)}">${icons.fork}<span>Fork</span></a>`,
+		);
+	}
+	// Shown by the page script when this device holds the delete key.
+	actions.push(
+		`<span class="letgo-slot" data-letgo-slot hidden>
+			<button class="btn btn-secondary tool-btn letgo-btn" type="button" data-letgo>${icons.trash}<span>Let go</span></button>
+			<button class="btn btn-danger tool-btn" type="button" data-letgo-confirm hidden>Sure?</button>
+			<button class="btn btn-secondary tool-btn" type="button" data-letgo-cancel hidden>Keep it</button>
+		</span>`,
+	);
 	return `<div class="action-bar">${actions.join("")}</div>`;
-}
-
-function metaFor(record: PasteRecord, config: Config, now: number): string {
-	const items: Array<{ label: string; value: string; iconName?: "eye" }> = [];
-	if (record.kind === "text" && record.language) {
-		items.push({ label: "Language", value: `<span class="mono">${escapeHtml(languageLabel(record.language))}</span>` });
-	}
-	if (record.kind === "file" && record.filename) {
-		items.push({ label: "File", value: `<span class="mono">${escapeHtml(record.filename)}</span>` });
-		items.push({ label: "Size", value: escapeHtml(formatBytes(record.sizeBytes)) });
-	}
-	if (record.kind !== "redirect") {
-		items.push({ label: "Size", value: escapeHtml(formatBytes(record.sizeBytes)) });
-	}
-	items.push({
-		label: "Created",
-		value: `<time datetime="${escapeHtml(formatDateTime(record.createdAt))}" data-relative="${record.createdAt}">${escapeHtml(formatDisplayDateTime(record.createdAt))}</time>`,
-	});
-	items.push({
-		label: "Expires",
-		value: `<time datetime="${escapeHtml(formatDateTime(record.expiresAt))}" data-relative-expiry="${record.expiresAt}" data-relative-before="Expires">${escapeHtml(formatExpiry(record.expiresAt, now))}</time>`,
-	});
-	if (config.viewCounting) {
-		items.push({
-			label: "Reads",
-			value: `${escapeHtml(String(record.views))} <span class="muted">(approximate)</span>`,
-		});
-	}
-	return metaRow(items);
 }
 
 /** Password gate. The derivation happens in the browser; the server only compares a verifier. */
 function lockedBody(record: PasteRecord): string {
 	return `
-	<section class="card gate-card">
-		<h1 class="h2">${icons.lock}This paste is protected</h1>
-		<p class="lede">Enter the password to open it. Nothing is sent until your browser has turned it into a key.</p>
-		<form class="form-grid" data-unlock-form data-paste-id="${escapeHtml(record.id)}">
-			<div class="field">
-				<label for="password">Password</label>
-				<input class="text-input" type="password" id="password" name="password" autocomplete="current-password" required data-autofocus>
-			</div>
-			<div class="form-actions">
-				<button class="btn btn-primary" type="submit">${icons.key}<span>Open</span></button>
-			</div>
-			<p class="field-note" data-unlock-error hidden role="alert"></p>
-		</form>
-		<noscript>
-			<div class="notice notice-info">
-				<p class="notice-title">JavaScript is off</p>
-				<div class="notice-body">Password-protected pastes are opened with a key derived in your browser, which needs JavaScript. Terminal users can request the raw paste with a derived verifier — see the <a href="/about">API notes</a>.</div>
-			</div>
-		</noscript>
-	</section>`;
+	<div class="gate-wrap">
+		<section class="card gate-card rise-in">
+			<span class="gate-icon">${icons.key}</span>
+			<h1 class="h1 gate-title">A locked slip.</h1>
+			<p class="lede">The sender set a password. Your browser turns it into a key before anything is sent — the password itself never travels.</p>
+			<form class="gate-form" data-unlock-form data-paste-id="${escapeHtml(record.id)}">
+				<input class="text-input gate-input" type="password" id="password" name="password" placeholder="The password, as you were told it" autocomplete="current-password" required data-autofocus aria-label="Password">
+				<button class="btn btn-primary gate-submit" type="submit">${icons.lock}<span>Open the slip</span></button>
+				<p class="field-error" data-unlock-error hidden role="alert"></p>
+			</form>
+			<noscript>
+				<div class="notice notice-info">
+					<p class="notice-title">JavaScript is off</p>
+					<div class="notice-body">Locked slips are opened with a key derived in your browser, which needs JavaScript. Terminal users can send a derived verifier — see the <a href="/docs">API docs</a>.</div>
+				</div>
+			</noscript>
+			<p class="gate-foot">Changed your mind? <a href="/">Leave it sealed</a></p>
+		</section>
+	</div>`;
 }
 
 /** Reveal page for burn-after-reading: a preview bot sees only a button. */
 function revealBody(record: PasteRecord): string {
 	return `
-	<section class="card gate-card">
-		<h1 class="h2">${icons.flame}This link opens once</h1>
-		<p class="lede">Press the button and the paste appears. It's deleted straight afterwards, and this page won't work a second time.</p>
-		<form method="post" action="/api/pastes/${escapeHtml(record.id)}/reveal" class="form-grid" data-reveal-form>
-			<div class="form-actions">
-				<button class="btn btn-primary" type="submit">${icons.eye}<span>Open it</span></button>
-			</div>
-		</form>
-		<p class="field-note">Link previews and crawlers never press buttons, so this paste is safe from being opened for you.</p>
-	</section>`;
+	<div class="gate-wrap">
+		<section class="card gate-card rise-in">
+			<span class="gate-icon">${icons.flame}</span>
+			<h1 class="h1 gate-title">This slip <span class="font-display-it">burns</span> after it's read.</h1>
+			<p class="lede">Once. That's all it has. The moment you open it, it's gone for everyone — link previews and refreshing can't coax it back.</p>
+			<form method="post" action="/api/pastes/${escapeHtml(record.id)}/reveal" class="gate-form" data-reveal-form>
+				<button class="btn btn-primary gate-submit" type="submit">${icons.eye}<span>Read it, and let it go</span></button>
+			</form>
+			<p class="gate-foot">Link previews and crawlers never press buttons, so this slip is safe from being opened for you.</p>
+		</section>
+	</div>`;
 }
 
 function encryptedBody(record: PasteRecord): string {
 	return `
-	<section class="card" data-encrypted-view data-paste-id="${escapeHtml(record.id)}">
-		<h1 class="h2">${icons.lock}Encrypted paste</h1>
+	<section class="card slip-body-card" data-encrypted-view data-paste-id="${escapeHtml(record.id)}">
+		<h2 class="h2">${icons.lock}An encrypted slip</h2>
 		<p class="lede">This was encrypted in the sender's browser. The key lives in the part of the link after the <span class="mono">#</span>, which never reaches our servers — so your browser needs JavaScript, and we can't help if the whole link is lost.</p>
 		<div class="encrypted-output" data-encrypted-output hidden>
-			<h2 class="h3" data-encrypted-title></h2>
+			<h3 class="h3" data-encrypted-title></h3>
 			<pre class="code-block" data-encrypted-text hidden><code></code></pre>
 			<div class="file-card" data-encrypted-file hidden>
-				${icons.file}
+				<span class="file-icon">${icons.file}</span>
 				<div class="file-meta">
 					<p class="file-name mono" data-encrypted-filename></p>
 					<p class="field-note" data-encrypted-filesize></p>
@@ -158,38 +164,26 @@ function encryptedBody(record: PasteRecord): string {
 				<button class="btn btn-primary" type="button" data-encrypted-download>${icons.download}<span>Save file</span></button>
 			</div>
 		</div>
-		<p class="field-note" data-encrypted-error hidden role="alert"></p>
+		<p class="field-error" data-encrypted-error hidden role="alert"></p>
 		<noscript>
 			<div class="notice notice-info">
 				<p class="notice-title">JavaScript is off</p>
-				<div class="notice-body">This paste can only be decrypted in a browser. The bytes are stored, but without JavaScript there is nothing to unscramble them.</div>
+				<div class="notice-body">This slip can only be decrypted in a browser. The bytes are stored, but without JavaScript there is nothing to unscramble them.</div>
 			</div>
 		</noscript>
 	</section>`;
 }
 
-function redirectBody(record: PasteRecord): string {
-	const destination = record.redirectUrl ?? "";
-	let host = destination;
-	try {
-		host = new URL(destination).hostname;
-	} catch {
-		host = destination;
-	}
-
+function fileBody(record: PasteRecord): string {
 	return `
-	<section class="card gate-card">
-		<h1 class="h2">${icons.link}This link goes somewhere else</h1>
-		<p class="lede">PurePaste is passing you on to <strong>${escapeHtml(host)}</strong>. Check the destination before you continue — short links can hide anything.</p>
-		<div class="destination">
-			<span class="destination-label">Destination</span>
-			<span class="destination-url mono">${escapeHtml(destination)}</span>
+	<div class="file-card rise-in">
+		<span class="file-icon">${icons.file}</span>
+		<div class="file-meta">
+			<p class="file-name mono">${escapeHtml(record.filename ?? "download")}</p>
+			<p class="field-note">${escapeHtml(formatBytes(record.sizeBytes))}${record.contentType ? ` · ${escapeHtml(record.contentType)}` : ""} · downloads rather than opens in the browser</p>
 		</div>
-		<div class="form-actions">
-			<a class="btn btn-primary" href="${escapeHtml(destination)}" rel="noopener noreferrer nofollow" referrerpolicy="no-referrer" data-external>${icons.external}<span>Continue to ${escapeHtml(host)}</span></a>
-			<a class="btn btn-secondary" href="/">Back to PurePaste</a>
-		</div>
-	</section>`;
+		<a class="btn btn-primary" href="${escapeHtml(`/download/${record.id}`)}">${icons.download}<span>Save file</span></a>
+	</div>`;
 }
 
 export function renderPastePage(options: PastePageOptions): string {
@@ -199,9 +193,10 @@ export function renderPastePage(options: PastePageOptions): string {
 		return renderLayout({
 			config,
 			page: "paste",
-			title: "Protected paste",
+			title: "A locked slip",
 			body: lockedBody(record),
 			noindex: true,
+			compactHeader: true,
 			bodyAttributes: { "data-paste-id": record.id, "data-locked": "1" },
 		});
 	}
@@ -210,9 +205,10 @@ export function renderPastePage(options: PastePageOptions): string {
 		return renderLayout({
 			config,
 			page: "paste",
-			title: "One-time link",
+			title: "A one-time slip",
 			body: revealBody(record),
 			noindex: true,
+			compactHeader: true,
 			bodyAttributes: { "data-paste-id": record.id, "data-burn": "1" },
 		});
 	}
@@ -220,27 +216,17 @@ export function renderPastePage(options: PastePageOptions): string {
 	let content: string;
 	if (record.encrypted) {
 		content = encryptedBody(record);
-	} else if (record.kind === "redirect") {
-		content = redirectBody(record);
 	} else if (record.kind === "file") {
-		content = `
-		<div class="file-card">
-			${icons.file}
-			<div class="file-meta">
-				<p class="file-name mono">${escapeHtml(record.filename ?? "download")}</p>
-				<p class="field-note">${escapeHtml(formatBytes(record.sizeBytes))} · downloads rather than opens in the browser</p>
-			</div>
-			<a class="btn btn-primary" href="${escapeHtml(`/${record.id}/download`)}">${icons.download}<span>Download</span></a>
-		</div>`;
+		content = fileBody(record);
 	} else if (options.inline !== null) {
 		content = `<pre class="code-block" data-code data-language="${escapeHtml(record.language ?? "plaintext")}"${record.markdown ? " data-markdown-source" : ""}><code>${escapeHtml(options.inline)}</code></pre>`;
 	} else {
 		content = `
-		<pre class="code-block" data-remote-code data-src="${escapeHtml(`/${record.id}/raw`)}" data-language="${escapeHtml(record.language ?? "plaintext")}"><code>Loading the paste…</code></pre>
+		<pre class="code-block" data-remote-code data-src="${escapeHtml(`/p/${record.id}/raw`)}" data-language="${escapeHtml(record.language ?? "plaintext")}"><code>Loading the slip…</code></pre>
 		<noscript>
 			<div class="notice notice-info">
-				<p class="notice-title">Large paste</p>
-				<div class="notice-body">This one is too big to inline without JavaScript. <a href="${escapeHtml(`/${record.id}/raw`)}">Open the raw text</a> instead.</div>
+				<p class="notice-title">Large slip</p>
+				<div class="notice-body">This one is too big to inline without JavaScript. <a href="${escapeHtml(`/p/${record.id}/raw`)}">Open the raw text</a> instead.</div>
 			</div>
 		</noscript>`;
 	}
@@ -248,33 +234,29 @@ export function renderPastePage(options: PastePageOptions): string {
 	// Markdown is rendered in the reader's browser from the same escaped source that is
 	// on the page: without JavaScript the raw text is still readable, and the renderer
 	// never sees HTML it did not produce itself.
-	const markdownOutput = record.markdown ? `<div class="markdown-body" data-markdown-output hidden></div>` : "";
+	const markdownOutput = record.markdown ? `<div class="md-view" data-markdown-output hidden></div>` : "";
 
-	const forkable = !record.encrypted && record.passwordVerifier === null;
+	const burned = Boolean(options.flash);
+	const flash = options.flash
+		? options.flash.tone === "warn"
+			? `<p class="burn-note">${icons.flame}<span>Read once, gone forever — this slip was destroyed the moment it reached you. Copy anything you still need.</span></p>`
+			: notice({ tone: options.flash.tone, body: options.flash.body })
+		: "";
 
 	const body = `
-	<article class="paste-article">
+	<article class="paste-article rise-in">
 		<header class="paste-header">
-			<h1 class="h1">${escapeHtml(titleFor(record))}</h1>
-			${pasteBadges(record)}
-			${metaFor(record, config, now)}
+			<h1 class="paste-title">${record.title || record.kind === "file" ? escapeHtml(titleFor(record)) : `<span class="font-display-it untitled">${escapeHtml(titleFor(record))}</span>`}</h1>
+			${metaLine(record, config, now)}
+			${actionBar(record, { revealed: burned })}
 		</header>
-		${options.flash ? notice({ tone: options.flash.tone, body: options.flash.body }) : ""}
+		${flash}
 		<div class="paste-body">
 			${content}
 			${markdownOutput}
 		</div>
-		${actionBar(record, { showFork: forkable })}
+		<p class="paste-foot">${icons.lock}<span>Unlisted and unindexed — whoever holds this link holds the slip.</span></p>
 	</article>
-
-	<dialog class="dialog" data-qr-dialog aria-labelledby="qr-title">
-		<h2 class="h3" id="qr-title">Scan to open</h2>
-		<div class="qr-holder" data-qr-holder></div>
-		<p class="field-note" data-qr-url></p>
-		<form method="dialog" class="form-actions">
-			<button class="btn btn-secondary" type="submit">Close</button>
-		</form>
-	</dialog>
 `;
 
 	return renderLayout({
@@ -283,6 +265,7 @@ export function renderPastePage(options: PastePageOptions): string {
 		title: titleFor(record),
 		body,
 		noindex: true,
+		compactHeader: true,
 		bodyAttributes: {
 			"data-paste-id": record.id,
 			"data-paste-kind": record.kind,
@@ -293,4 +276,4 @@ export function renderPastePage(options: PastePageOptions): string {
 	});
 }
 
-export { pasteBadges, titleFor };
+export { metaLine as pasteMetaLine };

@@ -167,7 +167,7 @@ describe("encrypted pastes", () => {
 
 		const page = await request(`/${created.id}`);
 		const html = await page.text();
-		expect(html).toContain("Encrypted paste");
+		expect(html).toContain("An encrypted slip");
 		expect(html).not.toContain("topsecretvalue");
 		expect(html).toContain("data-encrypted-view");
 	});

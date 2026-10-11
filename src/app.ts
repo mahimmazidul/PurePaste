@@ -10,13 +10,15 @@ import { bodyLimitBytes } from "./middleware/body-limit";
 import { createFromRequest, renderHomeWithError } from "./routes/create";
 import { getDownload, getPastePage, getRawPaste, revealPaste } from "./routes/paste";
 import { deleteManagedPaste, getMetadata, unlockPaste } from "./routes/manage";
+import { createLink, getLinkPage, goLink, revealLink } from "./routes/links";
+import { stores } from "./services/paste-store";
 import { renderApiDocs } from "./views/pages/docs";
 import { renderAboutPage } from "./views/pages/about";
 import { renderErrorPage } from "./views/pages/error";
-import { renderHistoryPage } from "./views/pages/history";
 import { renderLicensesPage } from "./views/pages/licenses";
 import { renderHome } from "./views/pages/home";
 import { renderManagePage } from "./views/pages/manage";
+import type { HomeStats } from "./views/pages/home";
 
 /**
  * Route table.
@@ -41,8 +43,23 @@ export function createApp(): Hono<AppBindings> {
 
 	/* ------------------------- pages ------------------------- */
 
-	app.get("/", (c) => c.html(renderHome({ config: c.get("config") })));
-	app.get("/pastes", (c) => c.html(renderHistoryPage(c.get("config"))));
+	app.get("/", async (c) => {
+		let stats: HomeStats = { slips: 0, links: 0, files: 0, bytes: 0 };
+		try {
+			const rows = await stores(c.env).meta.stats(Date.now());
+			for (const row of rows) {
+				if (row.kind === "redirect") stats.links += row.count;
+				else if (row.kind === "file") stats.files += row.count;
+				else stats.slips += row.count;
+				stats.bytes += row.bytes;
+			}
+		} catch {
+			// A stat bar must never take the front page down with it.
+		}
+		return c.html(renderHome({ config: c.get("config"), stats }));
+	});
+	// The drawer of device-kept slips now lives on the front page.
+	app.get("/pastes", (c) => c.redirect("/#drawer", 302));
 	app.get("/about", (c) => c.html(renderAboutPage(c.get("config"))));
 	app.get("/licenses", (c) => c.html(renderLicensesPage(c.get("config"))));
 	app.get("/docs", (c) =>
@@ -74,6 +91,25 @@ export function createApp(): Hono<AppBindings> {
 	api.post("/pastes/:id/unlock", bodyLimitBytes(8 * 1024), rateLimit("unlock"), (c) => unlockPaste(c));
 	api.post("/pastes/:id/reveal", bodyLimitBytes(4 * 1024), (c) => revealPaste(c));
 	api.delete("/pastes/:id", bodyLimitBytes(2 * 1024), (c) => deleteManagedPaste(c));
+	api.post("/links", rateLimit("create"), (c) => createLink(c));
+	api.get("/links/:id", (c) => getMetadata(c));
+	api.delete("/links/:id", bodyLimitBytes(2 * 1024), (c) => deleteManagedPaste(c));
+	api.post("/links/:id/reveal", bodyLimitBytes(2 * 1024), rateLimit("unlock"), (c) => revealLink(c));
+	api.get("/stats", async (c) => {
+		const rows = await stores(c.env).meta.stats(Date.now());
+		let slips = 0;
+		let links = 0;
+		let files = 0;
+		let bytes = 0;
+		for (const row of rows) {
+			if (row.kind === "redirect") links += row.count;
+			else if (row.kind === "file") files += row.count;
+			else slips += row.count;
+			bytes += row.bytes;
+		}
+		return c.json({ slips, links, files, bytes });
+	});
+	api.get("/health", (c) => c.json({ ok: true, time: Date.now() }));
 	api.get("/config", (c) => {
 		const config = c.get("config");
 		return c.json({
@@ -105,6 +141,11 @@ export function createApp(): Hono<AppBindings> {
 	api.all("/pastes/:id/raw", allow(["GET", "OPTIONS"]));
 	api.all("/pastes/:id/unlock", allow(["POST", "OPTIONS"]));
 	api.all("/pastes/:id/reveal", allow(["POST", "OPTIONS"]));
+	api.all("/links", allow(["POST", "OPTIONS"]));
+	api.all("/links/:id", allow(["GET", "DELETE", "OPTIONS"]));
+	api.all("/links/:id/reveal", allow(["POST", "OPTIONS"]));
+	api.all("/stats", allow(["GET", "OPTIONS"]));
+	api.all("/health", allow(["GET", "OPTIONS"]));
 	api.all("/config", allow(["GET", "OPTIONS"]));
 
 	app.route("/api", api);
@@ -114,6 +155,13 @@ export function createApp(): Hono<AppBindings> {
 	app.get("/manage/:id", (c) => c.html(renderManagePage({ config: c.get("config"), id: c.req.param("id") })));
 	app.get("/raw/:id", (c) => getRawPaste(c));
 	app.get("/download/:id", (c) => getDownload(c));
+
+	// Canonical Slip paths: slips under /p/, links behind their interstitial at /l/.
+	app.get("/p/:id", (c) => getPastePage(c));
+	app.get("/p/:id/raw", (c) => getRawPaste(c));
+	app.get("/p/:id/download", (c) => getDownload(c));
+	app.get("/l/:id", (c) => getLinkPage(c));
+	app.post("/l/:id/go", (c) => goLink(c));
 
 	// Friendly aliases for the same resources.
 	app.get("/:id", (c) => getPastePage(c));

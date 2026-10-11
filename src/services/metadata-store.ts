@@ -185,4 +185,16 @@ export class MetadataStore {
 		const row = await this.db.prepare(`SELECT COUNT(*) AS total FROM pastes`).first<{ total: number }>();
 		return row?.total ?? 0;
 	}
+
+	/** Live totals per kind, for the quiet stat bar on the front page. */
+	async stats(now: number): Promise<Array<{ kind: string; count: number; bytes: number }>> {
+		const rows = await this.db
+			.prepare(
+				`SELECT kind, COUNT(*) AS count, COALESCE(SUM(size_bytes), 0) AS bytes
+				 FROM pastes WHERE expires_at > ? AND consumed_at IS NULL GROUP BY kind`,
+			)
+			.bind(now)
+			.all<{ kind: string; count: number; bytes: number }>();
+		return rows.results ?? [];
+	}
 }

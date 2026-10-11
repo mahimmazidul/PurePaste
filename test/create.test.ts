@@ -174,7 +174,7 @@ describe("paste creation", () => {
 		});
 		expect(response.status).toBe(201);
 		const text = (await response.text()).trim();
-		expect(text).toBe("http://purepaste.test/stdin-paste");
+		expect(text).toBe("http://purepaste.test/p/stdin-paste");
 	});
 
 	it("answers JSON by default on the API", async () => {
@@ -200,8 +200,8 @@ describe("paste creation", () => {
 		const response = await request("/", { method: "POST", body: form, headers: { Accept: "text/html" } });
 		expect(response.status).toBe(200);
 		const html = await response.text();
-		expect(html).toContain("Paste created");
-		expect(html).toContain("Keep this link somewhere safe");
+		expect(html).toContain("Sealed");
+		expect(html).toContain("The delete key");
 		expect(html).toContain("#token=");
 		expect(html).toContain("data-created=");
 	});

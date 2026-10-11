@@ -23,8 +23,8 @@ describe("management and deletion", () => {
 		expect(html).toContain(`data-paste-id="${created.id}"`);
 		// The key stays in the fragment, so it appears nowhere in the markup.
 		expect(html).not.toContain(created.manage_token);
-		expect(html).toContain("Management link");
-		expect(html).toContain("Delete this paste?");
+		expect(html).toContain("The delete key link");
+		expect(html).toContain("Let this slip go?");
 	});
 
 	it("deletes the row and the object with a valid token, and is safe to retry", async () => {

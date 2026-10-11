@@ -113,14 +113,14 @@ describe("page markup", () => {
 
 	it("gives every page the landmarks and language a reader needs", async () => {
 		const created = await createPaste({ content: "landmarks" });
-		for (const path of ["/", "/about", "/pastes", `/${created.id}`]) {
+		for (const path of ["/", "/about", "/docs", `/p/${created.id}`]) {
 			const html = await (await request(path)).text();
 			expect(html).toContain('<html lang="en"');
 			expect(html).toContain('class="skip-link"');
 			expect(html).toContain('<main id="main"');
 			expect(html).toContain("<header");
 			expect(html).toContain("<footer");
-			expect(html).toContain('aria-label="Main"');
+			expect(html).toContain('aria-label="Footer"');
 			expect(html).toContain("viewport");
 		}
 	});
@@ -128,8 +128,11 @@ describe("page markup", () => {
 	it("labels the controls on the editor", async () => {
 		const html = await (await request("/")).text();
 		for (const id of ["title", "content", "language", "expire", "file", "slug"]) {
-			expect(html).toContain(`for="${id}"`);
+			expect(html).toContain(`id="${id}"`);
 		}
+		expect(html).toContain('aria-label="Title (optional)"');
+		expect(html).toContain('aria-label="Slip content"');
+		expect(html).toContain('for="file"');
 		expect(html).toContain('aria-describedby="slug-note"');
 		expect(html).toContain('spellcheck="false"');
 	});
@@ -145,7 +148,7 @@ describe("page markup", () => {
 		expect(response.status).toBe(400);
 		expect(html).toContain("data-error-summary");
 		expect(html).toContain('role="alert"');
-		expect(html).toContain("There's a problem with that paste");
+		expect(html).toContain("There's a problem with that submission");
 	});
 
 	it("credits the typefaces and scripts it serves itself", async () => {
@@ -154,8 +157,9 @@ describe("page markup", () => {
 
 		expect(response.status).toBe(200);
 		expect(response.headers.get("X-Robots-Tag")).toBeNull();
-		expect(html).toContain("Manrope");
-		expect(html).toContain("IBM Plex Mono");
+		expect(html).toContain("Inter");
+		expect(html).toContain("Instrument Serif");
+		expect(html).toContain("JetBrains Mono");
 		expect(html).toContain("SIL Open Font Licence");
 		expect(html).toContain("/assets/licenses/highlight.js-BSD.txt");
 		// The footer links every public page to it.
@@ -171,7 +175,7 @@ describe("page markup", () => {
 		const body = await readJson<{ id: string }>(created);
 		const html = await (await request(`/${body.id}`)).text();
 
-		expect(html).toContain("This link opens once");
+		expect(html).toContain("Read it, and let it go");
 		expect(html).not.toContain("secret one-time contents");
 	});
 });

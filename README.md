@@ -1,14 +1,17 @@
-# PurePaste
+# Slip
 
-A small, accountless paste and file sharing service that runs entirely on Cloudflare. One Worker, one D1 database for metadata, one R2 bucket for bodies, and an hourly cron that cleans up after itself.
+*(repository and Worker still named PurePaste — the product the pages speak is Slip.)*
 
-Every paste expires — 30 days is the hard ceiling and the server enforces it, not the page you are looking at. There are no accounts, no listing of what other people have pasted, no analytics, and nothing loaded from a third party. The link is the only way in, and the management link is the only way to remove something early.
+A small, accountless service for text, files and short honest links, running entirely on Cloudflare. One Worker, one D1 database for metadata, one R2 bucket for bodies, and an hourly cron that cleans up after itself.
+
+Every slip expires — 30 days is the hard ceiling and the server enforces it, not the page you are looking at.
+The front page is one composer with three tabs — **a slip** of text, **a link** that shows its destination before anyone hops, **a file** up to 25 MiB — with a quiet stat bar of live totals underneath and a browser-local drawer of everything this device sealed. There are no accounts, no listing of what other people have pasted, no analytics, and nothing loaded from a third party. The link is the only way in, and the management link is the only way to remove something early.
 
 - **Pastes and files.** Text up to 10 MiB, files up to 25 MiB, small snippets kept in D1 and everything else streamed to R2.
 - **Expiry that is real.** A row without a future `expires_at` cannot exist; the scheduled Worker removes what has lapsed.
 - **Optional protection.** A password whose derivation happens in the reader's browser, and end-to-end encryption where the key never leaves the URL fragment.
 - **Burn after reading.** A reveal page that a link preview cannot trigger, and a single-use claim that survives two people clicking at the same moment.
-- **A usable API.** Create, read, and delete from a terminal: pipe stdin, get a bare URL back, ask for JSON when you want it.
+- **A usable API.** Create, read, and delete from a terminal: pipe stdin, get a bare URL back, ask for JSON when you want it. `/api/links` seals hops, `/api/stats` feeds the stat bar, `/api/health` says hello.
 - **No lock-in.** Static assets are bundled and self-hosted, the client script is a few hundred lines of vanilla TypeScript, and the only runtime dependency is Hono.
 
 It is not a social network, a public gallery, an admin dashboard, or an analytics product. There is no way to browse what other people have made, and there will not be.
@@ -250,7 +253,7 @@ APP_SECRET=local-only-secret-at-least-16-chars
 
 **Encrypted pastes are stored as opaque bytes.** The server records the size, the creation time and the expiry, and nothing else. Titles and filenames travel inside the encrypted payload.
 
-**Link mode is deliberately slow.** A paste in URL mode shows where it goes, with the host named, before anybody is sent there. Only absolute `http` and `https` addresses are accepted; credentials in the URL, control characters, other schemes and anything over 2048 characters are refused. There is no way to make a link auto-redirect.
+**Links never hop on their own.** A link lives at `/l/<id>` and shows where it goes, with the host named and the full URL spelled out, before anybody is sent there; continuing is a deliberate `POST` to `/l/<id>/go` which counts the visit. A burn link keeps its destination sealed until the continue that spends it — only absolute `http` and `https` addresses are accepted; credentials in the URL, control characters, other schemes and anything over 2048 characters are refused. There is no way to make a link auto-redirect.
 
 **Forking instead of editing.** A paste is immutable. "Fork" opens the editor with the original body copied in, and the original stays where it is until it expires or you delete it. Encrypted and password-protected pastes cannot be forked, because there is nothing readable to copy.
 
@@ -301,7 +304,7 @@ The password is never accepted as a query parameter, so it cannot end up in a lo
 
 The live, always-current version of this reference is served by every instance at `/docs`, with each example stamped with the address you read it on. What follows is the same contract, with a placeholder host.
 
-The format is decided by the request, never by the User-Agent. An explicit `?format=` wins, then the `Accept` header, then a sensible default for the path: `/api/…` is JSON, pages are HTML.
+The format is decided by the request, never by the User-Agent. An explicit `?format=` wins, then the `Accept` header, then a sensible default for the path: `/api/…` is JSON, pages are HTML. Created resources answer with their canonical page — `/p/<id>` for slips and files, `/l/<id>` for links — and the bare `/<id>` still works, forwarding to whichever it is. Lifetimes accept the menu (`1h`, `1d`, `7d`, `14d`, `30d`), the Slip aliases `1w` and `1mo`, or bare seconds.
 
 ### Create
 
@@ -365,6 +368,22 @@ Password material (`password_salt`, `password_verifier`, `password_iterations`) 
 ```
 
 `manage_token` is shown exactly once. If it is lost, the paste can only be left to expire.
+
+### Links, stats and health
+
+```bash
+# Seal a short hop
+curl -s -X POST https://paste.example.com/api/links   -H "Content-Type: application/json"   -d '{"url":"https://example.com/a-long-page","expiry":"1w","burn":false}'
+
+# Count the visit and take the destination (what the button's POST does, as data)
+curl -s -X POST https://paste.example.com/api/links/<id>/reveal
+
+# What the front-page stat bar reads, and whether the instance is awake
+curl -s https://paste.example.com/api/stats
+curl -s https://paste.example.com/api/health
+```
+
+Links are deletable with the same management-token rules as pastes (`GET`/`DELETE /api/links/<id>`). A burn link's reveal spends it atomically: the second caller gets `410`.
 
 ### Read
 

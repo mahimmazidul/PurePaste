@@ -20,8 +20,7 @@ describe("burn after reading", () => {
 		const html = await response.text();
 
 		expect(response.status).toBe(200);
-		expect(html).toContain("This link opens once");
-		expect(html).toContain("Open it");
+		expect(html).toContain("Read it, and let it go");
 		expect(html).not.toContain("the one-time secret");
 
 		// A crawler or preview bot following the link repeatedly changes nothing.
@@ -46,7 +45,7 @@ describe("burn after reading", () => {
 
 		expect(revealed.status).toBe(200);
 		expect(html).toContain("the one-time secret");
-		expect(html).toContain("gone for good");
+		expect(html).toContain("gone forever");
 
 		const row = await readRow(created.id);
 		expect(row?.consumed_at).toBeGreaterThan(0);

@@ -64,7 +64,7 @@ describe("reading pastes", () => {
 
 		// The page hands the body to the browser rather than inlining 64 KiB of markup.
 		const page = await request(`/${created.id}`);
-		expect(await page.text()).toContain(`data-src="/${created.id}/raw"`);
+		expect(await page.text()).toContain(`data-src="/p/${created.id}/raw"`);
 	});
 
 	it("accepts a file upload and serves it as a download", async () => {

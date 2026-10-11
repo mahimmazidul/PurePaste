@@ -1,6 +1,6 @@
 import { readFragment } from "../lib/crypto";
 import { announce, formatBytes, qs, upgradeRelativeTimes } from "../lib/dom";
-import { removeHistory, updateHistory } from "../lib/history";
+import { removeLocalItem, updateLocalItem } from "../lib/local-items";
 
 interface Metadata {
 	id: string;
@@ -20,8 +20,8 @@ interface Metadata {
 }
 
 const REASONS: Record<number, string> = {
-	404: "This paste is no longer here. It was either deleted or it expired.",
-	410: "This paste has expired, or it was a one-time link that has already been opened.",
+	404: "This slip is no longer here. It was either let go or it faded.",
+	410: "This slip has faded, or it was a one-time link that has already been opened.",
 };
 
 /**
@@ -66,7 +66,7 @@ export function initManagePage(): void {
 		try {
 			const response = await fetch(`/api/pastes/${id}`, { headers: { Accept: "application/json" } });
 			if (!response.ok) {
-				fail(REASONS[response.status] ?? "This paste couldn't be found.");
+				fail(REASONS[response.status] ?? "This slip couldn't be found.");
 				return;
 			}
 			meta = (await response.json()) as Metadata;
@@ -80,7 +80,8 @@ export function initManagePage(): void {
 
 		// The public link only carries a key for encrypted pastes, and only if the
 		// management link was saved with one.
-		const publicUrl = key ? `${location.origin}/${id}#k=${key}` : `${location.origin}/${id}`;
+		const publicPath = meta.kind === "redirect" ? `/l/${id}` : `/p/${id}`;
+		const publicUrl = key ? `${location.origin}${publicPath}#k=${key}` : `${location.origin}${publicPath}`;
 		const publicField = qs<HTMLInputElement>("[data-manage-public]");
 		if (publicField) publicField.value = publicUrl;
 		const manageField = qs<HTMLInputElement>("[data-manage-link]");
@@ -109,8 +110,8 @@ export function initManagePage(): void {
 								: "Text",
 				],
 				["Size", formatBytes(meta.size_bytes)],
-				["Created", new Date(meta.created_at * 1000).toLocaleString()],
-				["Expires", new Date(meta.expires_at * 1000).toLocaleString()],
+				["Sealed", new Date(meta.created_at).toLocaleString()],
+				["Fades", new Date(meta.expires_at).toLocaleString()],
 			];
 			if (meta.locked) items.push(["Protection", "Password required"]);
 			if (typeof meta.views === "number") items.push(["Reads", `${meta.views} (approximate)`]);
@@ -128,8 +129,8 @@ export function initManagePage(): void {
 		}
 
 		// Keep the local list in step with what the server just told us.
-		updateHistory(id, {
-			expiresAt: meta.expires_at,
+		updateLocalItem(id, {
+			expiresAt: new Date(meta.expires_at).toISOString(),
 			...(meta.title ? { title: meta.title } : {}),
 			...(key ? { key } : {}),
 		});
@@ -178,12 +179,12 @@ function wireDelete(id: string, token: string): void {
 			});
 			// 404 means somebody already deleted it, which is the outcome we wanted.
 			if (!response.ok && response.status !== 404) throw new Error(String(response.status));
-			removeHistory([id]);
-			announce("Gone for good", "success");
-			location.assign("/?deleted=1");
+			removeLocalItem(id);
+			announce("Let go, gently", "success");
+			location.assign("/#drawer");
 		} catch {
 			opener!.disabled = false;
-			announce("The paste couldn't be deleted. Check your connection and try again.", "error");
+			announce("The slip couldn't be let go. Check your connection and try again.", "error");
 		}
 	}
 }

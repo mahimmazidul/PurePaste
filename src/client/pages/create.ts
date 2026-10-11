@@ -1,21 +1,87 @@
 import { newEncryptionKey, passwordFieldData } from "../lib/crypto";
-import { announce, formatBytes, qs } from "../lib/dom";
+import { announce, formatBytes, qs, qsa } from "../lib/dom";
+import { saveLocalItem } from "../lib/local-items";
 
 /**
- * Editor enhancements.
+ * The composer: three tabs, one sheet of paper each.
  *
- * The form works without any of this: the plain path is an ordinary POST that the
- * server answers with a result page. What is added here is convenience
- * (keyboard shortcut, drag and drop, size readout) plus the two features that
- * genuinely cannot work without client-side code: deriving a password verifier
- * and encrypting a payload before it leaves the browser.
+ * Everything works without this file — the tabs are radios, the forms are
+ * ordinary POSTs, and the server answers with the "Sealed." page. What lives
+ * here is convenience (auto-grow, counts, ⌘+Enter, drag and drop) plus the two
+ * things that genuinely cannot work without client-side code: deriving a
+ * password verifier and encrypting a payload before it leaves the browser.
  */
 export function initCreatePage(): void {
-	const form = qs<HTMLFormElement>("[data-create-form]");
-	if (!form) return;
+	const forms = qsa<HTMLFormElement>("[data-create-form]");
+	for (const form of forms) wireForm(form);
+	wireTabs();
+	void prefillFork();
+}
 
+const CAPTIONS: Record<string, string> = {
+	slip: "code · notes · prose",
+	link: "short, honest links",
+	file: "anything, up to the size limit",
+};
+
+function wireTabs(): void {
+	const caption = qs<HTMLElement>("[data-mode-caption]");
+	const radios = qsa<HTMLInputElement>("[data-mode-radio]");
+	const sync = () => {
+		const active = radios.find((radio) => radio.checked);
+		if (caption && active) caption.textContent = CAPTIONS[active.dataset.modeRadio ?? ""] ?? "";
+	};
+	for (const radio of radios) radio.addEventListener("change", sync);
+	sync();
+
+	// More-options disclosure, per panel.
+	for (const toggle of qsa<HTMLButtonElement>("[data-more-toggle]")) {
+		toggle.addEventListener("click", () => {
+			const body = qs<HTMLElement>("[data-more-body]", toggle.closest(".composer-panel") ?? undefined);
+			const open = toggle.getAttribute("aria-expanded") === "true";
+			toggle.setAttribute("aria-expanded", String(!open));
+			const span = toggle.querySelector("span");
+			if (span) span.textContent = open ? "More options" : "Fewer options";
+			if (body) body.hidden = open;
+		});
+	}
+}
+
+/** ?fork=<id> pulls the old slip's text into the new one. */
+async function prefillFork(): Promise<void> {
+	const fork = new URLSearchParams(location.search).get("fork");
+	if (!fork || !/^[a-z0-9-]{3,64}$/i.test(fork)) return;
+	const radio = qs<HTMLInputElement>('[data-mode-radio="slip"]');
+	if (radio) radio.checked = true;
+	const editor = qs<HTMLTextAreaElement>('[data-mode="slip"] [data-editor]');
+	if (!editor) return;
+	try {
+		const response = await fetch(`/raw/${encodeURIComponent(fork)}`, { headers: { Accept: "text/plain" } });
+		if (!response.ok) return;
+		editor.value = await response.text();
+		updateCount(editor);
+		grow(editor);
+	} catch {
+		/* the fork notice on the page already explains what was meant to happen */
+	}
+}
+
+function grow(editor: HTMLTextAreaElement): void {
+	editor.style.height = "0px";
+	editor.style.height = `${Math.max(320, editor.scrollHeight)}px`;
+}
+
+function updateCount(editor: HTMLTextAreaElement): void {
+	const form = editor.closest("[data-create-form]");
+	const counter = form ? qs<HTMLElement>("[data-composer-count]", form) : null;
+	if (!counter) return;
+	const chars = editor.value.length;
+	counter.textContent = chars > 0 ? `${chars.toLocaleString("en-US")} characters · ${formatBytes(new TextEncoder().encode(editor.value).byteLength)}` : "";
+}
+
+function wireForm(form: HTMLFormElement): void {
+	const mode = form.dataset.mode ?? "slip";
 	const editor = qs<HTMLTextAreaElement>("[data-editor]", form);
-	const counter = qs("[data-editor-counter]", form);
 	const submitButton = qs<HTMLButtonElement>("[data-submit-button]", form);
 	const passwordInput = qs<HTMLInputElement>("[data-password-input]", form);
 	const encryptToggle = qs<HTMLInputElement>("[data-encrypt-input]", form);
@@ -23,23 +89,31 @@ export function initCreatePage(): void {
 	const fileNameLabel = qs("[data-file-name]", form);
 	const dropzone = qs("[data-dropzone]", form);
 	const iterationsField = qs<HTMLInputElement>("[data-password-iterations]", form);
+	const expireSelect = qs<HTMLSelectElement>('select[name="expire"]', form);
+	const counter = qs<HTMLElement>("[data-composer-count]", form);
 
-	// The editor is focused on desktop, where a keyboard is waiting. On phones this
-	// would open a soft keyboard and hide the form, so it is left alone.
-	if (editor && window.matchMedia("(min-width: 860px) and (pointer: fine)").matches) {
-		editor.focus();
+	if (editor) {
+		// The editor is focused on desktop, where a keyboard is waiting. On phones
+		// this would open a soft keyboard and hide the form, so it is left alone.
+		if (window.matchMedia("(min-width: 860px) and (pointer: fine)").matches) editor.focus();
+		editor.addEventListener("input", () => {
+			grow(editor);
+			updateCount(editor);
+		});
+		grow(editor);
+		updateCount(editor);
 	}
 
-	if (editor && counter) {
-		const updateCounter = () => {
-			const bytes = new TextEncoder().encode(editor.value).byteLength;
-			counter.textContent = editor.value ? `${formatBytes(bytes)}` : "";
+	if (counter && expireSelect && mode !== "slip") {
+		const sync = () => {
+			const label = expireSelect.options[expireSelect.selectedIndex]?.textContent ?? "";
+			counter.textContent = `Lives for ${label.toLowerCase()}`;
 		};
-		editor.addEventListener("input", updateCounter);
-		updateCounter();
+		expireSelect.addEventListener("change", sync);
+		sync();
 	}
 
-	// Ctrl/Cmd + Enter creates the paste from anywhere in the form.
+	// Ctrl/Cmd + Enter seals from anywhere in the form.
 	form.addEventListener("keydown", (event) => {
 		if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
 			event.preventDefault();
@@ -78,11 +152,18 @@ export function initCreatePage(): void {
 		});
 	}
 
-	const setBusy = (busy: boolean, label = "Create paste") => {
+	const setBusy = (busy: boolean) => {
 		form.setAttribute("aria-busy", busy ? "true" : "false");
 		if (!submitButton) return;
 		submitButton.disabled = busy;
-		submitButton.textContent = busy ? "Working…" : label;
+		const span = submitButton.querySelector("span");
+		if (!span) return;
+		if (busy) {
+			submitButton.dataset.label = span.textContent ?? "";
+			span.textContent = "Sealing…";
+		} else if (submitButton.dataset.label) {
+			span.textContent = submitButton.dataset.label;
+		}
 	};
 
 	const showError = (message: string) => {
@@ -105,10 +186,25 @@ export function initCreatePage(): void {
 		const password = passwordInput?.value ?? "";
 		const encrypting = Boolean(encryptToggle?.checked);
 
-		if (!password && !encrypting) return; // Ordinary POST: the server renders the result page.
+		if (!password && !encrypting) {
+			// Ordinary POST: the server answers with the "Sealed." page.
+			if (mode === "slip" && !(editor?.value ?? "").trim()) {
+				event.preventDefault();
+				showError("Write something first — empty slips aren't kept.");
+				editor?.focus();
+				return;
+			}
+			if (mode === "file" && !(fileInput?.files?.[0])) {
+				event.preventDefault();
+				showError("Choose a file first.");
+				return;
+			}
+			setBusy(true);
+			return;
+		}
 
 		event.preventDefault();
-		setBusy(true, encrypting ? "Encrypting" : "Create paste");
+		setBusy(true);
 
 		try {
 			if (password) {
@@ -135,8 +231,10 @@ export function initCreatePage(): void {
 				error instanceof Error && error.message === "nothing_to_encrypt"
 					? "There's nothing to encrypt yet. Type something or choose a file."
 					: error instanceof Error && error.message === "create_failed"
-						? "The paste couldn't be created. Try again."
-						: "Something went wrong preparing the paste. Try again.",
+						? "The slip couldn't be sealed. Try again."
+						: error instanceof Error && error.message
+							? error.message
+							: "Something went wrong preparing the slip. Try again.",
 			);
 		}
 	});
@@ -146,8 +244,8 @@ export function initCreatePage(): void {
 async function submitEncrypted(form: HTMLFormElement): Promise<void> {
 	const editor = qs<HTMLTextAreaElement>("[data-editor]", form);
 	const fileInput = qs<HTMLInputElement>("[data-file-input]", form);
-	const titleInput = qs<HTMLInputElement>("#title", form);
-	const languageSelect = qs<HTMLSelectElement>("#language", form);
+	const titleInput = qs<HTMLInputElement>('input[name="title"]', form);
+	const languageSelect = qs<HTMLSelectElement>('select[name="language"]', form);
 	const markdownInput = qs<HTMLInputElement>('input[name="markdown"]', form);
 
 	const file = fileInput?.files?.[0] ?? null;
@@ -173,8 +271,8 @@ async function submitEncrypted(form: HTMLFormElement): Promise<void> {
 
 	const data = new FormData();
 	data.set("encrypted", "1");
-	data.set("expire", qs<HTMLSelectElement>("#expire", form)?.value ?? "");
-	data.set("slug", qs<HTMLInputElement>("#slug", form)?.value ?? "");
+	data.set("expire", qs<HTMLSelectElement>('select[name="expire"]', form)?.value ?? "");
+	data.set("slug", qs<HTMLInputElement>('input[name="slug"]', form)?.value ?? "");
 	const burn = qs<HTMLInputElement>('input[name="burn"]', form);
 	if (burn?.checked) data.set("burn", "1");
 
@@ -206,27 +304,21 @@ async function submitEncrypted(form: HTMLFormElement): Promise<void> {
 
 	const created = (await response.json()) as {
 		id: string;
-		url: string;
-		manage_url: string;
-		manage_token: string;
 		expires_at: number;
+		manage_token: string;
 	};
 
-	const { addHistory } = await import("../lib/history");
-	const manageUrl = `${location.origin}/manage/${created.id}#token=${created.manage_token}&k=${key}`;
-	addHistory({
+	saveLocalItem({
+		kind: "paste",
 		id: created.id,
-		title: null,
-		kind: metadata.kind,
-		url: `${location.origin}/${created.id}#k=${key}`,
-		manageUrl,
-		token: created.manage_token,
+		title: metadata.title ?? (file ? file.name : null),
+		url: `${location.origin}/p/${created.id}#k=${key}`,
+		manageToken: created.manage_token,
+		expiresAt: new Date(created.expires_at).toISOString(),
+		createdAt: new Date().toISOString(),
 		key,
-		createdAt: Date.now(),
-		expiresAt: created.expires_at,
-		algorithm: "client-side-key",
 	});
 
-	announce("Encrypted and saved", "success");
-	location.assign(manageUrl);
+	announce("Encrypted and sealed", "success");
+	location.assign(`/p/${created.id}#k=${key}`);
 }

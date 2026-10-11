@@ -10,8 +10,8 @@ export function renderAboutPage(config: Config): string {
 
 	const body = `
 	<section class="hero">
-		<h1 class="h1">How PurePaste works</h1>
-		<p class="lede">A small place to hand someone a piece of text or a file. No account, no dashboard, no list of pastes anywhere. This page is the honest version of what happens to what you paste.</p>
+		<h1 class="h1">How Slip works</h1>
+		<p class="lede">A small place to hand someone a slip of text, a file, or a short honest link. No account, no dashboard, no list of pastes anywhere. This page is the honest version of what happens to what you paste.</p>
 	</section>
 
 	<section class="card">
@@ -27,7 +27,7 @@ export function renderAboutPage(config: Config): string {
 
 	<section class="card">
 		<h2 class="h2">Where things are stored</h2>
-		<p>Metadata — sizes, expiry, a fingerprint of the management key — lives in Cloudflare D1. Content lives in D1 only when it is a small, unencrypted text paste (under ${escapeHtml(inlineLimit)}). Everything else, including every file and anything encrypted, goes to Cloudflare R2 object storage.</p>
+		<p>Metadata — sizes, expiry, a fingerprint of the delete key — lives in Cloudflare D1. Content lives in D1 only when it is a small, unencrypted slip (under ${escapeHtml(inlineLimit)}). Everything else, including every file and anything encrypted, goes to object storage (Cloudflare KV on this deployment).</p>
 		<p>Object names are derived from the paste id, never from a file name, and files always download rather than open in a browser.</p>
 		<dl class="spec-list">
 			<div><dt>Text pastes</dt><dd>up to ${escapeHtml(textLimit)}</dd></div>
@@ -42,7 +42,7 @@ export function renderAboutPage(config: Config): string {
 		<p>A <strong>password</strong> stops whoever finds the link from opening the paste. It is derived into a key in your browser, and only that key — never the password — reaches the server. It is a lock on the door: the content itself is still readable on the server.</p>
 		<p><strong>Browser encryption</strong> is the stronger one. The content is scrambled with AES-GCM before it is uploaded, and the key travels in the part of the URL after the <span class="mono">#</span>. Browsers never send that part to a server, so the stored bytes cannot be read here at all. The trade-off is absolute: lose the full link and the content is gone, for everyone.</p>
 		<p>You can use both. The password gate is checked first, then your browser decrypts what comes back.</p>
-		<p class="field-note">Why passwords are derived in the browser: a deliberately slow password hash would take tens of milliseconds of processor time per attempt. That is fine on a big server, but PurePaste is built to run inside the free tier's CPU budget, where a slow hash would turn one unlock into ten requests' worth of work. Deriving in the browser keeps the work off the server while staying well above the iteration counts that make guessing expensive — and the server only ever holds a keyed fingerprint.</p>
+		<p class="field-note">Why passwords are derived in the browser: a deliberately slow password hash would take tens of milliseconds of processor time per attempt. That is fine on a big server, but Slip is built to run inside the free tier's CPU budget, where a slow hash would turn one unlock into ten requests' worth of work. Deriving in the browser keeps the work off the server while staying well above the iteration counts that make guessing expensive — and the server only ever holds a keyed fingerprint.</p>
 	</section>
 
 	<section class="card">
@@ -65,21 +65,21 @@ export function renderAboutPage(config: Config): string {
 		<p class="lede">Paste standard input and get the link back:</p>
 		<pre class="code-block mono"><code>cat notes.txt | curl -s -X POST --data-binary @- \\
   -H "Accept: text/plain" -H "Content-Type: text/plain" \\
-  "https://your-deployment.example/api/pastes?expire=1d"</code></pre>
+  "/api/pastes?expire=1d"</code></pre>
 		<p class="lede">Upload a file, delete a paste, fetch the raw text:</p>
 		<pre class="code-block mono"><code>curl -s -X POST -F "file=@photo.png" -F "expire=7d" \\
-  -H "Accept: application/json" https://your-deployment.example/api/pastes
+  -H "Accept: application/json" /api/pastes
 
 curl -s -X DELETE -H "Authorization: Bearer &lt;manage-token&gt;" \\
-  https://your-deployment.example/api/pastes/&lt;id&gt;
+  /api/pastes/&lt;id&gt;
 
-curl -s https://your-deployment.example/raw/&lt;id&gt;</code></pre>
-		<p class="field-note">The API answers with JSON by default, or with just the URL when you ask for <span class="mono">text/plain</span>. Errors are JSON with a stable <span class="mono">error</span> code and a plain-language message.</p>
+curl -s /raw/&lt;id&gt;</code></pre>
+		<p class="field-note">The API answers with JSON by default, or with just the URL when you ask for <span class="mono">text/plain</span>. Errors are JSON with a stable <span class="mono">error</span> code and a plain-language message. The full contract — links, stats, passwords, burn — lives on the <a href="/docs">API page</a>, with every example stamped with this address.</p>
 	</section>
 
 	<section class="card">
 		<h2 class="h2">Running your own</h2>
-		<p>PurePaste is a single Cloudflare Worker with a D1 database, an R2 bucket and one hourly cron trigger. It has no accounts to manage and no admin panel to secure — which is exactly why there is nothing here to log into. ${icons.info} The README covers the exact commands.</p>
+		<p>Slip is a single Cloudflare Worker with a D1 database, object storage and one hourly cron trigger. It has no accounts to manage and no admin panel to secure — which is exactly why there is nothing here to log into. ${icons.info} The README covers the exact commands.</p>
 	</section>
 `;
 
@@ -89,7 +89,7 @@ curl -s https://your-deployment.example/raw/&lt;id&gt;</code></pre>
 		title: "How it works",
 		body,
 		description:
-			"What PurePaste stores, how expiration, passwords and browser encryption work, and what it cannot protect you from.",
+			"What Slip stores, how expiration, passwords and browser encryption work, and what it cannot protect you from.",
 	});
 }
 

@@ -19,7 +19,7 @@ describe("api", () => {
 		expect(response.status).toBe(201);
 		expect(response.headers.get("Content-Type")).toContain("text/plain");
 		const body = await response.text();
-		expect(body).toMatch(/^http:\/\/purepaste\.test\/[a-z0-9]{10}\n$/);
+		expect(body).toMatch(/^http:\/\/purepaste\.test\/p\/[a-z0-9]{10}\n$/);
 	});
 
 	it("honours ?format=url without any Accept header", async () => {
@@ -29,7 +29,23 @@ describe("api", () => {
 			headers: { "Content-Type": "text/plain" },
 		});
 		expect(response.status).toBe(201);
-		expect((await response.text()).trim()).toMatch(/^http:\/\/purepaste\.test\/[a-z0-9]{10}$/);
+		expect((await response.text()).trim()).toMatch(/^http:\/\/purepaste\.test\/p\/[a-z0-9]{10}$/);
+	});
+
+	it("reports live totals and health", async () => {
+		await request("/api/pastes", {
+			method: "POST",
+			body: "counted",
+			headers: { "Content-Type": "text/plain", Accept: "application/json" },
+		});
+		const stats = await readJson<{ slips: number; links: number; files: number; bytes: number }>(
+			await request("/api/stats"),
+		);
+		expect(stats.slips).toBeGreaterThanOrEqual(1);
+		expect(stats.bytes).toBeGreaterThanOrEqual(7);
+
+		const health = await readJson<{ ok: boolean }>(await request("/api/health"));
+		expect(health.ok).toBe(true);
 	});
 
 	it("takes piped stdin and returns JSON when asked for it", async () => {
@@ -41,7 +57,7 @@ describe("api", () => {
 		const created = await readJson<{ id: string; url: string }>(response);
 
 		expect(response.status).toBe(201);
-		expect(created.url).toBe(`${ORIGIN}/${created.id}`);
+		expect(created.url).toBe(`${ORIGIN}/p/${created.id}`);
 		expect((await request(`/raw/${created.id}`)).status).toBe(200);
 	});
 

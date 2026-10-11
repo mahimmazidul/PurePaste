@@ -106,12 +106,16 @@ export async function getPastePage(c: Context<AppBindings>): Promise<Response> {
 		return c.html(renderPastePage({ config, record, inline: null, unlocked: false, now }));
 	}
 
-	if (record.kind === "redirect" && !config.redirectEnabled) {
-		return htmlError(c, {
-			status: 404,
-			title: "URL mode is off",
-			message: "This instance no longer serves link pastes.",
-		});
+	if (record.kind === "redirect") {
+		if (!config.redirectEnabled) {
+			return htmlError(c, {
+				status: 404,
+				title: "URL mode is off",
+				message: "This instance no longer serves link pastes.",
+			});
+		}
+		// Links live behind their interstitial, wherever the visitor came in.
+		return c.redirect(`/l/${record.id}`, 302);
 	}
 
 	let inline: string | null = null;

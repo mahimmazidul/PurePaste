@@ -100,12 +100,14 @@ async function runCreate(
 				expiresAt: created.record.expiresAt,
 				kind: created.record.kind,
 				burnAfterRead: created.record.burnAfterRead,
+				title: created.record.title,
+				redirectUrl: created.record.redirectUrl,
 			}),
 		);
 	}
 
 	const format = negotiate(c, "json");
-	const url = `${origin}/${created.record.id}`;
+	const url = `${origin}/${created.record.kind === "redirect" ? "l" : "p"}/${created.record.id}`;
 	const manageUrl = `${origin}/manage/${created.record.id}#token=${created.manageToken}`;
 
 	if (format === "text") {
