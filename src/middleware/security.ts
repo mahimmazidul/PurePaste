@@ -33,40 +33,54 @@ export function isContentRoute(path: string): boolean {
 	return path.startsWith("/raw/") || path.startsWith("/download/") || path === "/robots.txt" || path === "/favicon.ico";
 }
 
+/** Pages that are meant to be found by search engines, plus robots.txt itself. */
 export function isPublicShellPath(path: string): boolean {
-	return path === "/" || path === "/about" || path === "/pastes";
+	return path === "/" || path === "/about" || path === "/pastes" || path === "/robots.txt";
 }
 
+/**
+ * Headers are applied to the finished response rather than to the context, so a
+ * route that hands back a streamed body or a hand-built Response is covered just
+ * as well as one that uses `c.html`.
+ */
 export function securityHeaders(): MiddlewareHandler<AppBindings> {
 	return async (c, next) => {
+		await next();
+
 		const path = c.req.path;
 		const contentRoute = isContentRoute(path);
+		const response = c.res;
+		const headers = new Headers(response.headers);
 
-		c.header("X-Content-Type-Options", "nosniff");
-		c.header("Referrer-Policy", "no-referrer");
-		c.header(
+		headers.set("X-Content-Type-Options", "nosniff");
+		headers.set("Referrer-Policy", "no-referrer");
+		headers.set(
 			"Permissions-Policy",
 			"accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()",
 		);
-		c.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
-		c.header(
+		headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+		headers.set(
 			"Content-Security-Policy",
 			contentRoute ? CSP_FOR_CONTENT : buildCsp({ turnstile: c.get("config")?.turnstileEnabled === true }),
 		);
-		c.header("Cross-Origin-Resource-Policy", "same-origin");
+		headers.set("Cross-Origin-Resource-Policy", "same-origin");
 
 		if (!contentRoute) {
-			c.header("X-Frame-Options", "DENY");
-			c.header("Cross-Origin-Opener-Policy", "same-origin");
+			headers.set("X-Frame-Options", "DENY");
+			headers.set("Cross-Origin-Opener-Policy", "same-origin");
 		}
 
 		// Nothing served by the Worker is cacheable: pastes expire, and protected
 		// responses must never be replayed from a cache.
-		c.header("Cache-Control", "no-store");
+		headers.set("Cache-Control", "no-store");
 		if (!isPublicShellPath(path)) {
-			c.header("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet");
+			headers.set("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet");
 		}
 
-		await next();
+		c.res = new Response(response.body, {
+			status: response.status,
+			statusText: response.statusText,
+			headers,
+		});
 	};
 }
