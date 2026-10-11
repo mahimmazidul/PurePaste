@@ -148,7 +148,8 @@ if (!(await exists(configPath))) {
 			}
 		}
 
-		if (!config.r2_buckets?.[0]?.bucket_name) problems.push("No R2 bucket is bound. Add an r2_buckets entry.");
+		if (!config.r2_buckets?.[0]?.bucket_name && !config.kv_namespaces?.[0]?.id)
+			problems.push("No blob storage is bound. Add an r2_buckets entry, or a kv_namespaces entry for the KV backend.");
 		if (!config.triggers?.crons?.length)
 			warnings.push("No cron trigger is configured, so expired pastes will only be cleaned up lazily.");
 		if (config.vars?.FEATURE_VIEW_COUNTING === "on") {

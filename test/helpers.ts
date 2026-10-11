@@ -48,22 +48,20 @@ export async function readRow(id: string): Promise<Record<string, unknown> | nul
 }
 
 export async function objectCount(): Promise<number> {
-	const listed = await testEnv.BUCKET.list();
-	return listed.objects.length;
+	const listed = await testEnv.BLOBS!.list();
+	return listed.keys.length;
 }
 
 export async function objectKeys(): Promise<string[]> {
-	const listed = await testEnv.BUCKET.list();
-	return listed.objects.map((object) => object.key).sort();
+	const listed = await testEnv.BLOBS!.list();
+	return listed.keys.map((key) => key.name).sort();
 }
 
 /** Clears both stores so each test starts from a known state. */
 export async function resetStorage(): Promise<void> {
 	await testEnv.DB.prepare("DELETE FROM pastes").run();
-	const listed = await testEnv.BUCKET.list();
-	if (listed.objects.length > 0) {
-		await testEnv.BUCKET.delete(listed.objects.map((object) => object.key));
-	}
+	const listed = await testEnv.BLOBS!.list();
+	for (const key of listed.keys) await testEnv.BLOBS!.delete(key.name);
 }
 
 /** A PBKDF2 verifier as a browser would compute it. */

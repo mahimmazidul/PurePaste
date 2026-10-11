@@ -7,13 +7,48 @@ export interface PutOptions {
 }
 
 /**
+ * The normalised view of a stored body returned by either backend.
+ *
+ * Callers need the stream, the byte size and a stable etag; the display
+ * metadata rides along, but the D1 row stays the authoritative source for
+ * content type and filename.
+ */
+export interface BlobBody {
+	body: ReadableStream;
+	size: number;
+	httpEtag: string;
+	contentType?: string;
+	filename?: string;
+}
+
+/**
+ * The blob-storage contract shared by both backends:
+ *
+ *  - `ObjectStore`    — R2, the upstream default. Strongly consistent reads.
+ *  - `KVObjectStore`  — Workers KV, for accounts that cannot enable R2
+ *                       (R2 activation requires a payment method even for
+ *                       free-tier usage; KV needs none).
+ *
+ * `stores()` picks R2 when a bucket is bound and KV otherwise, so switching
+ * back is a wrangler.jsonc change with no code edit.
+ */
+export interface BlobStore {
+	keyFor(id: string, kind: ObjectKind): string;
+	put(key: string, value: ReadableStream | ArrayBuffer | Uint8Array | string, options?: PutOptions): Promise<void>;
+	putFromRequest(key: string, request: Request, options?: PutOptions): Promise<void>;
+	putBytes(key: string, bytes: Uint8Array, options?: PutOptions): Promise<void>;
+	get(key: string): Promise<BlobBody | null>;
+	delete(keys: string[]): Promise<{ deleted: number; failed: string[] }>;
+}
+
+/**
  * Thin wrapper around R2.
  *
  * Object keys are derived only from the validated paste id and a storage kind —
  * never from a visitor-supplied filename or media type. The original display name
  * is kept as object metadata and in D1 instead.
  */
-export class ObjectStore {
+export class ObjectStore implements BlobStore {
 	constructor(
 		private readonly bucket: R2Bucket,
 		private readonly prefix = "pp/v1",
@@ -58,10 +93,16 @@ export class ObjectStore {
 		await this.put(key, bytes, options);
 	}
 
-	async get(key: string): Promise<R2ObjectBody | null> {
+	async get(key: string): Promise<BlobBody | null> {
 		const object = await this.bucket.get(key);
 		if (!object || !("body" in object) || !object.body) return null;
-		return object;
+		return {
+			body: object.body,
+			size: object.size,
+			httpEtag: object.httpEtag,
+			contentType: object.httpMetadata?.contentType ?? undefined,
+			filename: object.customMetadata?.filename,
+		};
 	}
 
 	async head(key: string): Promise<R2Object | null> {
@@ -88,6 +129,111 @@ export class ObjectStore {
 						failed.push(key);
 					}
 				}
+			}
+		}
+		return { deleted, failed };
+	}
+}
+
+/** What is stored alongside each KV value. KV metadata is capped at 1 KiB. */
+interface KVBlobMetadata {
+	size: number;
+	etag: string;
+	contentType?: string;
+	filename?: string;
+}
+
+/**
+ * Workers KV backend — the same contract as the R2 store, for accounts that
+ * cannot enable R2.
+ *
+ * Differences from R2, all absorbed here:
+ *
+ *  - KV is eventually consistent: a new value reaches every edge location
+ *    within about a minute, so a large paste opened from a distant colo
+ *    moments after creation can briefly report its body as missing. Small
+ *    text pastes are unaffected — they live in the D1 row, not here.
+ *  - KV has no HEAD and no native etag: the byte size and a per-object etag
+ *    are stored as value metadata (filenames are truncated to stay inside
+ *    the 1 KiB budget; D1 keeps the authoritative copy).
+ *  - KV has no bulk delete: keys are removed one at a time. The sweep is
+ *    already bounded to `CLEANUP_BATCH_SIZE` rows per pass, which keeps this
+ *    inside the free tier's 1,000 deletes/day for personal-scale traffic.
+ *
+ * Free tier: 1 GB storage, 100k reads/day, 1k writes/deletes/lists per day,
+ * 25 MiB maximum value size — which matches FILE_MAX_BYTES exactly.
+ */
+export class KVObjectStore implements BlobStore {
+	constructor(
+		private readonly kv: KVNamespace,
+		private readonly prefix = "pp/v1",
+	) {}
+
+	keyFor(id: string, kind: ObjectKind): string {
+		return `${this.prefix}/${kind}/${id}`;
+	}
+
+	private static byteSize(value: ArrayBuffer | Uint8Array | string): number {
+		if (typeof value === "string") return new TextEncoder().encode(value).byteLength;
+		return value.byteLength;
+	}
+
+	private metadataFor(options: PutOptions, size: number): KVBlobMetadata {
+		const metadata: KVBlobMetadata = { size, etag: `"${crypto.randomUUID()}"` };
+		if (options.contentType) metadata.contentType = options.contentType;
+		if (options.filename) metadata.filename = options.filename.slice(0, 200);
+		return metadata;
+	}
+
+	async put(
+		key: string,
+		value: ReadableStream | ArrayBuffer | Uint8Array | string,
+		options: PutOptions = {},
+	): Promise<void> {
+		const size = options.size ?? (value instanceof ReadableStream ? -1 : KVObjectStore.byteSize(value));
+		await this.kv.put(key, value, { metadata: this.metadataFor(options, size) });
+	}
+
+	/** Streams a request body straight into KV without buffering it in the isolate. */
+	async putFromRequest(key: string, request: Request, options: PutOptions = {}): Promise<void> {
+		if (!request.body) throw new Error("Request body is unavailable");
+		if (!options.size || options.size < 0) throw new Error("A known size is required to stream an upload");
+
+		const { readable, writable } = new FixedLengthStream(options.size);
+		const upload = this.kv.put(key, readable, { metadata: this.metadataFor(options, options.size) });
+		await request.body.pipeTo(writable);
+		await upload;
+	}
+
+	async putBytes(key: string, bytes: Uint8Array, options: PutOptions = {}): Promise<void> {
+		await this.put(key, bytes, { ...options, size: options.size ?? bytes.byteLength });
+	}
+
+	async get(key: string): Promise<BlobBody | null> {
+		const result = await this.kv.getWithMetadata<KVBlobMetadata>(key, { type: "stream" });
+		if (!result.value) return null;
+		const meta = result.metadata;
+		return {
+			body: result.value,
+			// -1 keeps the routes' `if (size)` guard from sending a bogus Content-Length.
+			size: meta?.size ?? -1,
+			httpEtag: meta?.etag ?? `"${key}"`,
+			contentType: meta?.contentType,
+			filename: meta?.filename,
+		};
+	}
+
+	/** Idempotent: deleting a key that is already gone is not an error. */
+	async delete(keys: string[]): Promise<{ deleted: number; failed: string[] }> {
+		const failed: string[] = [];
+		let deleted = 0;
+		// KV has no bulk delete; each key is its own operation.
+		for (const key of keys) {
+			try {
+				await this.kv.delete(key);
+				deleted += 1;
+			} catch {
+				failed.push(key);
 			}
 		}
 		return { deleted, failed };

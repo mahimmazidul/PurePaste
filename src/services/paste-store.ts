@@ -6,15 +6,22 @@ import { hashManageToken, hashPasswordVerifier } from "../lib/crypto";
 import { utf8Length } from "../lib/validation";
 import type { CreatePasteInput, CreatedPaste, PasteRecord, ReadResult } from "../types";
 import { MetadataStore } from "./metadata-store";
-import { ObjectStore, type ObjectKind } from "./object-store";
+import { KVObjectStore, ObjectStore, type BlobBody, type BlobStore, type ObjectKind } from "./object-store";
 
 export interface Stores {
 	meta: MetadataStore;
-	objects: ObjectStore;
+	objects: BlobStore;
 }
 
 export function stores(env: AppEnv): Stores {
-	return { meta: new MetadataStore(env.DB), objects: new ObjectStore(env.BUCKET) };
+	return { meta: new MetadataStore(env.DB), objects: blobStore(env) };
+}
+
+/** R2 when a bucket is bound; the Workers KV backend otherwise. */
+function blobStore(env: AppEnv): BlobStore {
+	if (env.BUCKET) return new ObjectStore(env.BUCKET);
+	if (env.BLOBS) return new KVObjectStore(env.BLOBS);
+	throw new Error("No blob storage is bound: configure an R2 bucket (BUCKET) or a KV namespace (BLOBS).");
 }
 
 export interface CreateOptions {
@@ -102,7 +109,7 @@ export async function createPaste(
 	throw new Error("Could not allocate a unique paste id");
 }
 
-async function safeDeleteObject(objects: ObjectStore, key: string): Promise<void> {
+async function safeDeleteObject(objects: BlobStore, key: string): Promise<void> {
 	try {
 		await objects.delete([key]);
 	} catch {
@@ -120,7 +127,7 @@ async function writeBody(
 	config: Config,
 	input: CreatePasteInput,
 	id: string,
-	objects: ObjectStore,
+	objects: BlobStore,
 ): Promise<WrittenBody> {
 	if (input.body.type === "none") {
 		return { content: null, objectKey: null, sizeBytes: 0 };
@@ -173,7 +180,7 @@ export async function loadPaste(env: AppEnv, id: string, options: LoadOptions = 
 
 export type BodyResult =
 	| { kind: "inline"; text: string }
-	| { kind: "object"; object: R2ObjectBody; etag: string }
+	| { kind: "object"; object: BlobBody; etag: string }
 	| { kind: "redirect"; url: string }
 	| { kind: "missing" };
 

@@ -181,6 +181,21 @@ Cloudflare creates the DNS record and certificate for you. Nothing in the applic
 
 ---
 
+## Blob storage: R2 or Workers KV
+
+The upstream design stores blobs in R2. Activating R2 requires a payment method on file even for free-tier usage, so **this deployment binds a Workers KV namespace instead** (`BLOBS` in `wrangler.jsonc`) — free, with no card. The server picks the backend automatically: R2 when a `BUCKET` binding is present, KV otherwise. To switch back, enable R2, create the bucket, restore the `r2_buckets` block in place of `kv_namespaces`, and redeploy; no code changes are needed.
+
+Differences from R2, absorbed in `src/services/object-store.ts`:
+
+- KV is eventually consistent: values reach every edge location within about a minute, so a very fresh large paste can briefly miss from a distant colo. Small text pastes are unaffected — they live in the D1 row.
+- Values cap at 25 MiB, which matches `FILE_MAX_BYTES` exactly.
+- There is no bulk delete: the cleanup sweep removes keys one at a time, within its existing batch bounds.
+- KV has no HEAD or native etag, so the byte size and a per-object etag ride in the value metadata (1 KiB budget; the D1 row keeps the authoritative filename).
+
+Free-tier budget: 1 GB storage, 100k reads/day, and 1k each of writes, deletes and lists per day.
+
+---
+
 ## Configuration
 
 Everything is set in the `vars` block of `wrangler.jsonc` and read through `src/config.ts`. Values are clamped to a sane range, so a typo cannot produce a nonsense limit; anything unparseable falls back to the default shown here.

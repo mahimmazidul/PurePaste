@@ -264,7 +264,7 @@ describe("encrypted pastes", () => {
 			}),
 		);
 
-		const before = await testEnv.BUCKET.get(`pp/v1/blob/${created.id}`);
+		const before = await testEnv.BLOBS!.get(`pp/v1/blob/${created.id}`);
 		expect(before).not.toBeNull();
 		expect(await stores(testEnv).objects.delete([`pp/v1/blob/${created.id}`])).toEqual({ deleted: 1, failed: [] });
 	});

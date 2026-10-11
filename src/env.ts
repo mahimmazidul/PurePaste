@@ -3,14 +3,17 @@ import type { Config } from "./config";
 /**
  * Bindings available to the Worker.
  *
- * `DB`, `BUCKET` and `ASSETS` are required. Everything else is optional so the
- * application runs locally, and in tests, without any optional production binding
- * being configured.
+ * `DB` and `ASSETS` are required, plus exactly one blob backend: `BUCKET`
+ * (R2, the upstream default) or `BLOBS` (Workers KV, for accounts that
+ * cannot enable R2 without a payment method). Everything else is optional so
+ * the application runs locally, and in tests, without any optional production
+ * binding being configured.
  */
 export interface AppEnv {
 	/** Required bindings. */
 	DB: D1Database;
-	BUCKET: R2Bucket;
+	BUCKET?: R2Bucket;
+	BLOBS?: KVNamespace;
 	ASSETS: Fetcher;
 
 	/** Vars. Optional so nothing here depends on how an operator configures the instance. */

@@ -18,17 +18,25 @@
     {
       "binding": "DB",
       "database_name": "purepaste",
-      // Replace with the id printed by: npm run db:create
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      // Created 2026-10-12 via: npm run db:create
+      "database_id": "3c795d78-6c6c-4678-ab42-5fa284cca3f5",
       "migrations_dir": "migrations"
     }
   ],
-  "r2_buckets": [
+  // Blob storage. Upstream PurePaste binds an R2 bucket, but activating R2
+  // requires a payment method even for free-tier usage, so this deployment
+  // binds a Workers KV namespace instead (free, no card). The server picks R2
+  // when an r2_buckets entry is present and KV otherwise, so switching back
+  // later is a config-only change: restore the r2_buckets block, drop this one.
+  // KV caveats: values propagate to all edges within ~60s (a very fresh large
+  // paste can briefly miss from a distant colo), 25 MiB max value, and the
+  // free tier allows 1k writes + 1k deletes + 100k reads per day.
+  "kv_namespaces": [
     {
-      "binding": "BUCKET",
-      // Replace with the bucket you create: npm run bucket:create
-      "bucket_name": "purepaste-blobs"
-    }
+      "binding": "BLOBS",
+      // Created with: npx wrangler kv namespace create BLOBS
+      "id": "c5a11354c60e46e2aff984a8522be788",
+    },
   ],
   // Hourly cleanup of expired and consumed pastes. Cloudflare cron runs in UTC.
   "triggers": {
