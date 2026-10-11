@@ -299,6 +299,8 @@ The password is never accepted as a query parameter, so it cannot end up in a lo
 
 ## The API
 
+The live, always-current version of this reference is served by every instance at `/docs`, with each example stamped with the address you read it on. What follows is the same contract, with a placeholder host.
+
 The format is decided by the request, never by the User-Agent. An explicit `?format=` wins, then the `Accept` header, then a sensible default for the path: `/api/…` is JSON, pages are HTML.
 
 ### Create

@@ -10,6 +10,7 @@ import { bodyLimitBytes } from "./middleware/body-limit";
 import { createFromRequest, renderHomeWithError } from "./routes/create";
 import { getDownload, getPastePage, getRawPaste, revealPaste } from "./routes/paste";
 import { deleteManagedPaste, getMetadata, unlockPaste } from "./routes/manage";
+import { renderApiDocs } from "./views/pages/docs";
 import { renderAboutPage } from "./views/pages/about";
 import { renderErrorPage } from "./views/pages/error";
 import { renderHistoryPage } from "./views/pages/history";
@@ -44,6 +45,9 @@ export function createApp(): Hono<AppBindings> {
 	app.get("/pastes", (c) => c.html(renderHistoryPage(c.get("config"))));
 	app.get("/about", (c) => c.html(renderAboutPage(c.get("config"))));
 	app.get("/licenses", (c) => c.html(renderLicensesPage(c.get("config"))));
+	app.get("/docs", (c) =>
+		c.html(renderApiDocs({ config: c.get("config"), origin: new URL(c.req.url).origin })),
+	);
 	app.get("/robots.txt", (c) => c.text("User-agent: *\nDisallow: /\n"));
 
 	app.post("/", rateLimit("create"), async (c) => {

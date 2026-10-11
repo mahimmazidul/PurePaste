@@ -17,6 +17,7 @@ export const SLUG_MAX_LENGTH = 64;
 export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
 	"api",
 	"assets",
+	"docs",
 	"raw",
 	"download",
 	"manage",

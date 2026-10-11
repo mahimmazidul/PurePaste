@@ -1425,6 +1425,99 @@ main {
   margin: 0;
 }
 
+/* ------------------------------------------------------------- api docs -- */
+
+.endpoint {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0.55rem;
+	margin: 0.9rem 0 0.35rem;
+}
+
+.method {
+	font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 0.6875rem;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	padding: 0.15rem 0.45rem;
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius-sm);
+	color: var(--text-muted);
+}
+
+.method-post {
+	border-color: var(--success);
+	color: var(--success);
+}
+
+.method-delete {
+	border-color: var(--danger);
+	color: var(--danger);
+}
+
+.endpoint .path {
+	font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-weight: 600;
+	font-size: 0.9375rem;
+}
+
+.code-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+	margin: 0.9rem 0 0.35rem;
+}
+
+.code-head + input[type="hidden"] + .code-block,
+.code-head + .code-block {
+	margin-top: 0;
+}
+
+.table-scroll {
+	overflow-x: auto;
+	margin-bottom: 0.75rem;
+}
+
+.api-table {
+	border-collapse: collapse;
+	width: 100%;
+	min-width: 34rem;
+}
+
+.endpoint .path {
+	overflow-wrap: anywhere;
+}
+
+.notice-body .mono {
+	overflow-wrap: anywhere;
+}
+
+.api-table th,
+.api-table td {
+	border: 1px solid var(--border);
+	padding: 0.4rem 0.6rem;
+	text-align: left;
+	font-size: 0.9375rem;
+	vertical-align: top;
+}
+
+.api-table th {
+	background: var(--surface-soft);
+	font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 0.6875rem;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--text-muted);
+}
+
+.api-table code {
+	font-size: 0.8125rem;
+}
+
 /* ------------------------------------------------------------- dialogs --- */
 
 dialog {

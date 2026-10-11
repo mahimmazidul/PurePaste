@@ -57,6 +57,7 @@ function nav(options: NavOptions): string {
 	<a class="nav-link" href="/"${page === "home" ? ' aria-current="page"' : ""}>New paste</a>
 	<a class="nav-link" href="/pastes"${page === "history" ? ' aria-current="page"' : ""}>My pastes<span class="nav-count" data-history-count hidden></span></a>
 	<a class="nav-link" href="/about"${page === "about" ? ' aria-current="page"' : ""}>About</a>
+<a class="nav-link" href="/docs"${page === "docs" ? ' aria-current="page"' : ""}>API</a>
 	<div class="theme-switch" role="group" aria-label="Colour theme" data-theme-switch>
 		<button type="button" class="theme-option" data-theme-value="auto" aria-pressed="true" title="Match system">${icons.theme}<span class="sr-only">System theme</span></button>
 		<button type="button" class="theme-option" data-theme-value="light" aria-pressed="false" title="Light">Light</button>
@@ -132,7 +133,7 @@ ${options.body}
 <footer class="site-footer">
 	<div class="shell footer-inner">
 		<p>No accounts. No tracking. Everything here expires on its own.</p>
-		<p class="footer-links"><a href="/about">How it works</a> · <a href="/pastes">My pastes</a> · <a href="/licenses">Licences</a></p>
+		<p class="footer-links"><a href="/about">How it works</a> · <a href="/docs">API</a> · <a href="/pastes">My pastes</a> · <a href="/licenses">Licences</a></p>
 	</div>
 </footer>
 <div class="toast-stack" data-toasts aria-live="polite" aria-atomic="false"></div>
