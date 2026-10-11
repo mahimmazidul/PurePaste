@@ -17,7 +17,8 @@ export async function getMetadata(c: Context<AppBindings>): Promise<Response> {
 
 	if (result.status === "missing") return errorJson(c, 404, "not_found", "This paste doesn't exist.");
 	if (result.status === "expired") return errorJson(c, 410, "expired", "This paste has expired.");
-	if (result.status === "consumed") return errorJson(c, 410, "consumed", "This one-time paste has already been opened.");
+	if (result.status === "consumed")
+		return errorJson(c, 410, "consumed", "This one-time paste has already been opened.");
 
 	const record = result.record;
 	const origin = new URL(c.req.url).origin;
@@ -30,7 +31,13 @@ export async function getMetadata(c: Context<AppBindings>): Promise<Response> {
 	if (record.passwordVerifier && record.passwordSalt) {
 		const headerVerifier = c.req.header("x-paste-password");
 		const unlocked = headerVerifier
-			? await verifyPassword(c.get("config").appSecret, record.id, record.passwordSalt, headerVerifier.trim(), record.passwordVerifier)
+			? await verifyPassword(
+					c.get("config").appSecret,
+					record.id,
+					record.passwordSalt,
+					headerVerifier.trim(),
+					record.passwordVerifier,
+				)
 			: false;
 		if (!unlocked) {
 			return c.json(
@@ -95,7 +102,13 @@ export async function unlockPaste(c: Context<AppBindings>): Promise<Response> {
 	const verifier = await readVerifier(c);
 	if (!verifier) throw fail.invalidCredentials();
 
-	const ok = await verifyPassword(c.get("config").appSecret, record.id, record.passwordSalt, verifier, record.passwordVerifier);
+	const ok = await verifyPassword(
+		c.get("config").appSecret,
+		record.id,
+		record.passwordSalt,
+		verifier,
+		record.passwordVerifier,
+	);
 	if (!ok) throw fail.invalidCredentials();
 
 	const expiresAt = Date.now() + c.get("config").unlockCookieTtlSeconds * 1000;
@@ -139,7 +152,7 @@ export async function deleteManagedPaste(c: Context<AppBindings>): Promise<Respo
 			401,
 			"unauthorized",
 			"The management token is missing.",
-			'Send it as: Authorization: Bearer <token>. Query strings are not accepted because they end up in logs and browser history.',
+			"Send it as: Authorization: Bearer <token>. Query strings are not accepted because they end up in logs and browser history.",
 		);
 	}
 
@@ -174,6 +187,12 @@ function readManageToken(c: Context<AppBindings>): string | null {
 	return null;
 }
 
-function errorJson(c: Context<AppBindings>, status: 400 | 401 | 404 | 410, code: string, message: string, hint?: string) {
+function errorJson(
+	c: Context<AppBindings>,
+	status: 400 | 401 | 404 | 410,
+	code: string,
+	message: string,
+	hint?: string,
+) {
 	return c.json({ error: code, message, ...(hint ? { hint } : {}) }, status);
 }

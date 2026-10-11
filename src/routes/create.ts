@@ -38,8 +38,7 @@ interface ParsedRequest {
 }
 
 export type CreateOutcome =
-	| { ok: true; response: Response }
-	| { ok: false; error: unknown; formValues: HomeFormValues; browserForm: boolean };
+	{ ok: true; response: Response } | { ok: false; error: unknown; formValues: HomeFormValues; browserForm: boolean };
 
 /**
  * Parses, validates, stores, and answers.
@@ -92,7 +91,17 @@ async function runCreate(
 
 	// The form path always answers with a page. The API path follows the Accept header.
 	if (browserForm && negotiate(c, "html") === "html") {
-		return c.html(renderCreated({ config, origin, id: created.record.id, manageToken: created.manageToken, expiresAt: created.record.expiresAt, kind: created.record.kind, burnAfterRead: created.record.burnAfterRead }));
+		return c.html(
+			renderCreated({
+				config,
+				origin,
+				id: created.record.id,
+				manageToken: created.manageToken,
+				expiresAt: created.record.expiresAt,
+				kind: created.record.kind,
+				burnAfterRead: created.record.burnAfterRead,
+			}),
+		);
 	}
 
 	const format = negotiate(c, "json");
@@ -169,7 +178,16 @@ async function parseRequest(
 		const turnstileToken = get("cf-turnstile-response");
 
 		if (get("kind") === "redirect") {
-			return { raw, kindHint: "redirect", text: null, bytes: null, file: null, turnstileToken, formValues, encryptRequested: false };
+			return {
+				raw,
+				kindHint: "redirect",
+				text: null,
+				bytes: null,
+				file: null,
+				turnstileToken,
+				formValues,
+				encryptRequested: false,
+			};
 		}
 		if (file && file.size > 0) {
 			if (file.size > c.get("config").fileMaxBytes) {
@@ -228,7 +246,16 @@ async function parseRequest(
 			if (bytes.byteLength > JSON_PAYLOAD_MAX_BYTES) {
 				throw fail.tooLarge(`${Math.floor(JSON_PAYLOAD_MAX_BYTES / 1024)} KiB for JSON payloads`);
 			}
-			return { raw, kindHint: "encrypted", text: null, bytes, file: null, turnstileToken: null, formValues: emptyFormValues, encryptRequested: true };
+			return {
+				raw,
+				kindHint: "encrypted",
+				text: null,
+				bytes,
+				file: null,
+				turnstileToken: null,
+				formValues: emptyFormValues,
+				encryptRequested: true,
+			};
 		}
 
 		const text = asString("content") ?? asString("text") ?? "";
@@ -239,7 +266,13 @@ async function parseRequest(
 			bytes: null,
 			file: null,
 			turnstileToken: null,
-			formValues: { ...emptyFormValues, content: text, title: asString("title") ?? "", slug: asString("slug") ?? "", expire: asString("expire") ?? "" },
+			formValues: {
+				...emptyFormValues,
+				content: text,
+				title: asString("title") ?? "",
+				slug: asString("slug") ?? "",
+				expire: asString("expire") ?? "",
+			},
 			encryptRequested: false,
 		};
 	}
@@ -256,7 +289,12 @@ async function parseRequest(
 		markdown: query.markdown,
 		filename: query.filename,
 	};
-	const queryValues: HomeFormValues = { ...emptyFormValues, expire: query.expire ?? "", slug: query.slug ?? "", title: query.title ?? "" };
+	const queryValues: HomeFormValues = {
+		...emptyFormValues,
+		expire: query.expire ?? "",
+		slug: query.slug ?? "",
+		title: query.title ?? "",
+	};
 
 	if (encrypted || contentType.includes("application/octet-stream")) {
 		const buffer = await c.req.arrayBuffer();
@@ -264,7 +302,16 @@ async function parseRequest(
 			throw fail.tooLarge(`${Math.floor(c.get("config").fileMaxBytes / 1024 / 1024)} MiB`);
 		}
 		if (encrypted) {
-			return { raw, kindHint: "encrypted", text: null, bytes: new Uint8Array(buffer), file: null, turnstileToken: null, formValues: queryValues, encryptRequested: true };
+			return {
+				raw,
+				kindHint: "encrypted",
+				text: null,
+				bytes: new Uint8Array(buffer),
+				file: null,
+				turnstileToken: null,
+				formValues: queryValues,
+				encryptRequested: true,
+			};
 		}
 		const filename = query.filename ?? "upload";
 		return {
@@ -336,7 +383,12 @@ function assemble(parsed: ParsedRequest, config: Config): CreatePasteInput {
 		case "redirect":
 			return assembleRedirectInput(parsed.raw, config);
 		case "file":
-			return assembleFileInput(parsed.raw, { size: parsed.file?.size ?? parsed.bytes?.byteLength ?? 0, filename: parsed.file?.filename ?? "upload" }, body, config);
+			return assembleFileInput(
+				parsed.raw,
+				{ size: parsed.file?.size ?? parsed.bytes?.byteLength ?? 0, filename: parsed.file?.filename ?? "upload" },
+				body,
+				config,
+			);
 		case "encrypted":
 			return assembleEncryptedInput(parsed.raw, parsed.bytes?.byteLength ?? 0, config, body);
 		default:
@@ -345,11 +397,7 @@ function assemble(parsed: ParsedRequest, config: Config): CreatePasteInput {
 }
 
 /** Re-renders the editor with what the visitor typed, plus a readable error summary. */
-export function renderHomeWithError(
-	c: Context<AppBindings>,
-	error: unknown,
-	values: HomeFormValues,
-): Response {
+export function renderHomeWithError(c: Context<AppBindings>, error: unknown, values: HomeFormValues): Response {
 	const config = c.get("config");
 	const status = isAppError(error) ? error.status : 500;
 	const message = isAppError(error) ? error.message : "Something went wrong on our end.";

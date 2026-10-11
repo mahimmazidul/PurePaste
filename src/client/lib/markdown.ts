@@ -15,9 +15,31 @@
  */
 
 const ALLOWED_TAGS = new Set([
-	"p", "br", "strong", "em", "del", "code", "pre", "blockquote",
-	"ul", "ol", "li", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "a", "table",
-	"thead", "tbody", "tr", "th", "td",
+	"p",
+	"br",
+	"strong",
+	"em",
+	"del",
+	"code",
+	"pre",
+	"blockquote",
+	"ul",
+	"ol",
+	"li",
+	"h1",
+	"h2",
+	"h3",
+	"h4",
+	"h5",
+	"h6",
+	"hr",
+	"a",
+	"table",
+	"thead",
+	"tbody",
+	"tr",
+	"th",
+	"td",
 ]);
 
 const SAFE_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
@@ -49,7 +71,8 @@ export function safeHref(raw: string): string | null {
 function inline(text: string): string {
 	let out = escapeHtml(text);
 
-	// Inline code first, so its contents are not formatted further.
+	// Inline code first, so its contents are not formatted further. The placeholder
+	// is a NUL byte: it cannot occur in escaped text, so it cannot collide.
 	const codeSpans: string[] = [];
 	out = out.replace(/`([^`]+)`/g, (_match, code: string) => {
 		codeSpans.push(`<code>${code}</code>`);
@@ -73,6 +96,7 @@ function inline(text: string): string {
 	out = out.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
 	out = out.replace(/~~([^~]+)~~/g, "<del>$1</del>");
 
+	// eslint-disable-next-line no-control-regex -- matching the placeholder written above
 	out = out.replace(/\u0000code(\d+)\u0000/g, (_match, index: string) => codeSpans[Number(index)] ?? "");
 	return out;
 }
@@ -110,9 +134,7 @@ export function renderMarkdown(source: string): string {
 		if (tableRows.length === 0) return;
 		const [head, ...rest] = tableRows;
 		const headCells = (head ?? []).map((cell) => `<th>${inline(cell)}</th>`).join("");
-		const bodyRows = rest
-			.map((row) => `<tr>${row.map((cell) => `<td>${inline(cell)}</td>`).join("")}</tr>`)
-			.join("");
+		const bodyRows = rest.map((row) => `<tr>${row.map((cell) => `<td>${inline(cell)}</td>`).join("")}</tr>`).join("");
 		out.push(`<table><thead><tr>${headCells}</tr></thead><tbody>${bodyRows}</tbody></table>`);
 		tableRows = [];
 	};
@@ -127,7 +149,9 @@ export function renderMarkdown(source: string): string {
 		const fence = line.match(/^\s*(```|~~~)\s*([\w+-]*)\s*$/);
 		if (fence) {
 			if (inCode) {
-				out.push(`<pre><code${codeLanguage ? ` class="language-${escapeHtml(codeLanguage)}"` : ""}>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+				out.push(
+					`<pre><code${codeLanguage ? ` class="language-${escapeHtml(codeLanguage)}"` : ""}>${escapeHtml(codeLines.join("\n"))}</code></pre>`,
+				);
 				inCode = false;
 				codeLines = [];
 				codeLanguage = "";
@@ -191,7 +215,12 @@ export function renderMarkdown(source: string): string {
 		closeList();
 
 		if (line.includes("|") && line.trim().startsWith("|")) {
-			const cells = line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+			const cells = line
+				.trim()
+				.replace(/^\|/, "")
+				.replace(/\|$/, "")
+				.split("|")
+				.map((cell) => cell.trim());
 			if (cells.every((cell) => /^:?-{2,}:?$/.test(cell))) continue; // separator row
 			closeParagraph();
 			tableRows.push(cells);
@@ -215,25 +244,24 @@ export function renderMarkdown(source: string): string {
  * except a validated href on an anchor is dropped.
  */
 export function stripDisallowedTags(html: string): string {
-	return html
-		.replace(/<\/?([a-zA-Z][a-zA-Z0-9-]*)([^>]*)>/g, (match, rawTag: string, rawAttributes: string) => {
-			const tag = rawTag.toLowerCase();
-			if (!ALLOWED_TAGS.has(tag)) return "";
-			const closing = match.startsWith("</");
-			if (closing) return `</${tag}>`;
-			if (tag === "a") {
-				const href = rawAttributes.match(/href="([^"]*)"/)?.[1] ?? "";
-				const safe = safeHref(decodeEntities(href));
-				if (!safe) return "<a>";
-				return `<a href="${escapeHtml(safe)}" rel="noopener noreferrer nofollow" target="_blank">`;
-			}
-			if (tag === "code") {
-				const language = rawAttributes.match(/class="(language-[\w+-]{1,32})"/)?.[1];
-				return language ? `<code class="${language}">` : "<code>";
-			}
-			if (tag === "br" || tag === "hr") return `<${tag}>`;
-			return `<${tag}>`;
-		});
+	return html.replace(/<\/?([a-zA-Z][a-zA-Z0-9-]*)([^>]*)>/g, (match, rawTag: string, rawAttributes: string) => {
+		const tag = rawTag.toLowerCase();
+		if (!ALLOWED_TAGS.has(tag)) return "";
+		const closing = match.startsWith("</");
+		if (closing) return `</${tag}>`;
+		if (tag === "a") {
+			const href = rawAttributes.match(/href="([^"]*)"/)?.[1] ?? "";
+			const safe = safeHref(decodeEntities(href));
+			if (!safe) return "<a>";
+			return `<a href="${escapeHtml(safe)}" rel="noopener noreferrer nofollow" target="_blank">`;
+		}
+		if (tag === "code") {
+			const language = rawAttributes.match(/class="(language-[\w+-]{1,32})"/)?.[1];
+			return language ? `<code class="${language}">` : "<code>";
+		}
+		if (tag === "br" || tag === "hr") return `<${tag}>`;
+		return `<${tag}>`;
+	});
 }
 
 function decodeEntities(value: string): string {

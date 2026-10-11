@@ -60,7 +60,10 @@ export function encodeBase32(bytes: Uint8Array): string {
 }
 
 /** Uniform over the 32 character alphabet: 5 bits map exactly onto the alphabet. */
-export function generateId(randomBytes: (length: number) => Uint8Array = defaultRandomBytes, length = ID_LENGTH): string {
+export function generateId(
+	randomBytes: (length: number) => Uint8Array = defaultRandomBytes,
+	length = ID_LENGTH,
+): string {
 	return encodeBase32(randomBytes(length)).slice(0, length);
 }
 
@@ -119,7 +122,10 @@ export function encodeBase64Url(bytes: Uint8Array): string {
 
 export function decodeBase64Url(value: string): Uint8Array | null {
 	if (!/^[A-Za-z0-9_-]+$/.test(value)) return null;
-	const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+	const padded = value
+		.replace(/-/g, "+")
+		.replace(/_/g, "/")
+		.padEnd(Math.ceil(value.length / 4) * 4, "=");
 	try {
 		const binary = atob(padded);
 		const bytes = new Uint8Array(binary.length);

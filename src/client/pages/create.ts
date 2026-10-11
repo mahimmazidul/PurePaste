@@ -204,7 +204,6 @@ async function submitEncrypted(form: HTMLFormElement): Promise<void> {
 		throw new Error(detail?.message ?? "create_failed");
 	}
 
-
 	const created = (await response.json()) as {
 		id: string;
 		url: string;

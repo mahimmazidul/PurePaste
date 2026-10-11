@@ -6,7 +6,7 @@
  * Keep this file tiny and synchronous: it is the one blocking script on the page.
  */
 try {
-	var stored = localStorage.getItem("purepaste.theme");
+	const stored = localStorage.getItem("purepaste.theme");
 	if (stored === "light" || stored === "dark") document.documentElement.dataset.theme = stored;
 } catch (error) {
 	// A blocked localStorage means the device preference wins. Nothing else to do.

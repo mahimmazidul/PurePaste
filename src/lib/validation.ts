@@ -28,6 +28,7 @@ export function utf8LengthAtMost(text: string, maxBytes: number): boolean {
 export function parseTitle(raw: unknown): string | null {
 	if (typeof raw !== "string") return null;
 	// Control characters are stripped; they break layout and terminal output.
+	// eslint-disable-next-line no-control-regex -- matching control characters is the purpose
 	const cleaned = raw.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").trim();
 	if (!cleaned) return null;
 	return cleaned.slice(0, TITLE_MAX_LENGTH);
@@ -57,6 +58,7 @@ export function parseRedirectUrl(raw: unknown): string {
 	// Control characters are refused rather than cleaned up. The URL parser drops
 	// some of them silently, which would hide an attempt to smuggle a value into a
 	// header or into a line of terminal output.
+	// eslint-disable-next-line no-control-regex -- matching control characters is the purpose
 	if (/[\u0000-\u001f\u007f]/.test(trimmed)) throw fail.invalidUrl();
 
 	let url: URL;

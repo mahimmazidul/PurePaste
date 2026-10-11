@@ -45,7 +45,8 @@ const TTL_LABELS: Record<string, string> = {
 
 function expirationOptions(config: Config, selected: string): string {
 	const defaultSeconds = config.defaultTtlSeconds;
-	const fallback = config.ttlChoices.find((choice) => choice.seconds === defaultSeconds)?.value ?? config.ttlChoices[0]?.value;
+	const fallback =
+		config.ttlChoices.find((choice) => choice.seconds === defaultSeconds)?.value ?? config.ttlChoices[0]?.value;
 	return config.ttlChoices
 		.map((choice) => {
 			const value = choice.value;
@@ -221,6 +222,7 @@ export function renderHome(options: HomeOptions): string {
 		page: "home",
 		title: "PurePaste",
 		body,
-		description: "Make a paste or share a file. Accountless, private by obscurity, and everything expires within 30 days.",
+		description:
+			"Make a paste or share a file. Accountless, private by obscurity, and everything expires within 30 days.",
 	});
 }

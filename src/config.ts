@@ -50,7 +50,8 @@ function field(env: object, key: string): unknown {
 }
 
 function readInt(value: unknown, fallback: number, min: number, max: number): number {
-	const parsed = typeof value === "string" ? Number.parseInt(value, 10) : typeof value === "number" ? value : Number.NaN;
+	const parsed =
+		typeof value === "string" ? Number.parseInt(value, 10) : typeof value === "number" ? value : Number.NaN;
 	if (!Number.isFinite(parsed)) return fallback;
 	return Math.min(Math.max(Math.trunc(parsed), min), max);
 }

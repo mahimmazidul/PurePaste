@@ -82,7 +82,8 @@ export function renderLayout(options: LayoutOptions): string {
 	const { config } = options;
 	const title = options.title === "PurePaste" ? "PurePaste" : `${options.title} · PurePaste`;
 	const description =
-		options.description ?? "PurePaste is a small, accountless place to share a snippet of text or a file. Everything expires.";
+		options.description ??
+		"PurePaste is a small, accountless place to share a snippet of text or a file. Everything expires.";
 
 	const bodyAttributes = Object.entries({
 		"data-page": options.page,

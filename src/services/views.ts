@@ -39,9 +39,11 @@ function flushViews(env: AppEnv, ctx?: Deferrer): void {
 	buffer = new Map();
 	lastFlushAt = Date.now();
 
-	const write = stores(env).meta.addViews(entries).catch(() => {
-		// Approximation is acceptable: a dropped flush must never fail a read.
-	});
+	const write = stores(env)
+		.meta.addViews(entries)
+		.catch(() => {
+			// Approximation is acceptable: a dropped flush must never fail a read.
+		});
 	if (ctx) ctx.waitUntil(write);
 }
 

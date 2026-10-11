@@ -109,7 +109,8 @@ if (!(await exists(configPath))) {
 		}
 
 		if (!config.r2_buckets?.[0]?.bucket_name) problems.push("No R2 bucket is bound. Add an r2_buckets entry.");
-		if (!config.triggers?.crons?.length) warnings.push("No cron trigger is configured, so expired pastes will only be cleaned up lazily.");
+		if (!config.triggers?.crons?.length)
+			warnings.push("No cron trigger is configured, so expired pastes will only be cleaned up lazily.");
 		if (config.vars?.FEATURE_VIEW_COUNTING === "on") {
 			warnings.push(
 				"FEATURE_VIEW_COUNTING is on. Every read then writes to D1 — useful, but it consumes row-write quota.",
@@ -132,7 +133,9 @@ if (secretList.ok) {
 		warnings.push("APP_SECRET is not set for this Worker. Run: npx wrangler secret put APP_SECRET");
 	}
 } else {
-	warnings.push("Could not list Worker secrets (not logged in, or offline). Make sure APP_SECRET is set before deploying.");
+	warnings.push(
+		"Could not list Worker secrets (not logged in, or offline). Make sure APP_SECRET is set before deploying.",
+	);
 }
 
 const migrations = await run("npx", ["wrangler", "d1", "migrations", "list", "purepaste", "--remote"]);
@@ -151,4 +154,6 @@ if (problems.length > 0) {
 	process.exit(1);
 }
 
-console.log(`preflight passed${warnings.length > 0 ? ` (${warnings.length} warning${warnings.length === 1 ? "" : "s"})` : ""}.`);
+console.log(
+	`preflight passed${warnings.length > 0 ? ` (${warnings.length} warning${warnings.length === 1 ? "" : "s"})` : ""}.`,
+);

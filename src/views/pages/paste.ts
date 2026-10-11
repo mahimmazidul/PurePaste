@@ -1,7 +1,7 @@
 import type { Config } from "../../config";
 import { escapeHtml, formatBytes, formatDateTime, formatExpiry } from "../../lib/format";
 import { languageLabel } from "../../lib/languages";
-import { button, copyField, icon, icons, metaRow, notice, renderLayout } from "../layout";
+import { button, icon, icons, metaRow, notice, renderLayout } from "../layout";
 import type { PasteRecord } from "../../types";
 
 export interface PastePageOptions {
@@ -45,12 +45,18 @@ function actionBar(record: PasteRecord, options: { showFork: boolean }): string 
 			variant: "secondary",
 		}),
 	);
-	actions.push(button({ label: "Copy link", iconName: "link", attributes: "data-copy-link data-js-only", variant: "secondary" }));
-	actions.push(button({ label: "QR code", iconName: "qr", attributes: "data-qr-open data-js-only", variant: "secondary" }));
+	actions.push(
+		button({ label: "Copy link", iconName: "link", attributes: "data-copy-link data-js-only", variant: "secondary" }),
+	);
+	actions.push(
+		button({ label: "QR code", iconName: "qr", attributes: "data-qr-open data-js-only", variant: "secondary" }),
+	);
 
 	if (!record.encrypted) {
 		if (record.kind !== "redirect") {
-			actions.push(`<a class="btn btn-secondary" href="${escapeHtml(`/${record.id}/raw`)}">${icon("raw")}<span>Raw</span></a>`);
+			actions.push(
+				`<a class="btn btn-secondary" href="${escapeHtml(`/${record.id}/raw`)}">${icon("raw")}<span>Raw</span></a>`,
+			);
 		}
 		if (record.kind === "file") {
 			actions.push(
@@ -59,7 +65,9 @@ function actionBar(record: PasteRecord, options: { showFork: boolean }): string 
 		}
 	}
 	if (options.showFork) {
-		actions.push(`<a class="btn btn-quiet" href="${escapeHtml(`/?fork=${record.id}`)}">${icon("fork")}<span>Fork</span></a>`);
+		actions.push(
+			`<a class="btn btn-quiet" href="${escapeHtml(`/?fork=${record.id}`)}">${icon("fork")}<span>Fork</span></a>`,
+		);
 	}
 	return `<div class="action-bar">${actions.join("")}</div>`;
 }
@@ -85,7 +93,10 @@ function metaFor(record: PasteRecord, config: Config, now: number): string {
 		value: `<time datetime="${escapeHtml(formatDateTime(record.expiresAt))}" data-relative-expiry="${record.expiresAt}" data-relative-before="Expires in">${escapeHtml(formatExpiry(record.expiresAt, now))}</time>`,
 	});
 	if (config.viewCounting) {
-		items.push({ label: "Reads", value: `${escapeHtml(String(record.views))} <span class="muted">(approximate)</span>` });
+		items.push({
+			label: "Reads",
+			value: `${escapeHtml(String(record.views))} <span class="muted">(approximate)</span>`,
+		});
 	}
 	return metaRow(items);
 }

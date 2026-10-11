@@ -1,13 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import {
-	createPaste,
-	objectKeys,
-	readRow,
-	request,
-	resetStorage,
-	testConfig,
-	testEnv,
-} from "./helpers";
+import { createPaste, objectKeys, readRow, request, resetStorage, testConfig, testEnv } from "./helpers";
 
 describe("reading pastes", () => {
 	beforeEach(resetStorage);

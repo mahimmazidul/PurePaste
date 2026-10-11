@@ -88,7 +88,8 @@ curl -s https://your-deployment.example/raw/&lt;id&gt;</code></pre>
 		page: "about",
 		title: "How it works",
 		body,
-		description: "What PurePaste stores, how expiration, passwords and browser encryption work, and what it cannot protect you from.",
+		description:
+			"What PurePaste stores, how expiration, passwords and browser encryption work, and what it cannot protect you from.",
 	});
 }
 

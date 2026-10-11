@@ -28,17 +28,25 @@ describe("size limits", () => {
 
 	it("rejects a file over the configured maximum", () => {
 		expect(() =>
-			assembleFileInput({}, { size: 1024, filename: "ok.bin" }, { type: "bytes", bytes: new Uint8Array(1024) }, SMALL_LIMITS),
+			assembleFileInput(
+				{},
+				{ size: 1024, filename: "ok.bin" },
+				{ type: "bytes", bytes: new Uint8Array(1024) },
+				SMALL_LIMITS,
+			),
 		).not.toThrow();
 		expect(() =>
-			assembleFileInput({}, { size: 1025, filename: "big.bin" }, { type: "bytes", bytes: new Uint8Array(1) }, SMALL_LIMITS),
+			assembleFileInput(
+				{},
+				{ size: 1025, filename: "big.bin" },
+				{ type: "bytes", bytes: new Uint8Array(1) },
+				SMALL_LIMITS,
+			),
 		).toThrow();
 	});
 
 	it("refuses an empty upload", () => {
-		expect(() =>
-			assembleFileInput({}, { size: 0, filename: "empty.txt" }, { type: "none" }, SMALL_LIMITS),
-		).toThrow();
+		expect(() => assembleFileInput({}, { size: 0, filename: "empty.txt" }, { type: "none" }, SMALL_LIMITS)).toThrow();
 	});
 
 	it("rejects an oversized body before reading it", async () => {

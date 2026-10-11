@@ -34,10 +34,7 @@ export interface PasswordMaterial {
 	algo: string;
 }
 
-export type PasteBody =
-	| { type: "text"; text: string }
-	| { type: "bytes"; bytes: Uint8Array }
-	| { type: "none" };
+export type PasteBody = { type: "text"; text: string } | { type: "bytes"; bytes: Uint8Array } | { type: "none" };
 
 /** A validated creation request, independent of how it arrived (HTML form, JSON, raw body). */
 export interface CreatePasteInput {

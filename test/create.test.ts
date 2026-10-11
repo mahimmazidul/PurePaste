@@ -1,5 +1,15 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { createPaste as apiCreate, jsonRequest, objectKeys, readJson, readRow, request, resetStorage, testConfig, testEnv } from "./helpers";
+import {
+	createPaste as apiCreate,
+	jsonRequest,
+	objectKeys,
+	readJson,
+	readRow,
+	request,
+	resetStorage,
+	testConfig,
+	testEnv,
+} from "./helpers";
 import { createPaste as serviceCreate } from "../src/services/paste-store";
 import { TTL_CHOICES } from "../src/config";
 
@@ -133,21 +143,26 @@ describe("paste creation", () => {
 	it("gives up cleanly when every generated id collides", async () => {
 		await apiCreate({ content: "occupies the id", slug: "collides01" });
 		await expect(
-			serviceCreate(testEnv, testConfig, {
-				kind: "text",
-				title: null,
-				language: "plaintext",
-				markdown: false,
-				burnAfterRead: false,
-				encrypted: false,
-				ttlSeconds: 3600,
-				slug: null,
-				password: null,
-				redirectUrl: null,
-				body: { type: "text", text: "x" },
-				filename: null,
-				contentType: null,
-			}, { idFactory: () => "collides01" }),
+			serviceCreate(
+				testEnv,
+				testConfig,
+				{
+					kind: "text",
+					title: null,
+					language: "plaintext",
+					markdown: false,
+					burnAfterRead: false,
+					encrypted: false,
+					ttlSeconds: 3600,
+					slug: null,
+					password: null,
+					redirectUrl: null,
+					body: { type: "text", text: "x" },
+					filename: null,
+					contentType: null,
+				},
+				{ idFactory: () => "collides01" },
+			),
 		).rejects.toThrow();
 	});
 
@@ -188,7 +203,7 @@ describe("paste creation", () => {
 		expect(html).toContain("Paste created");
 		expect(html).toContain("Keep this link somewhere safe");
 		expect(html).toContain("#token=");
-		expect(html).toContain('data-created=');
+		expect(html).toContain("data-created=");
 	});
 
 	it("re-renders the form with the typed values when a form is rejected", async () => {

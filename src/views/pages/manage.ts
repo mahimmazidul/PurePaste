@@ -20,7 +20,7 @@ export function renderManagePage(options: ManagePageOptions): string {
 	</section>
 
 	<div class="notice-row" data-manage-loading>
-		${notice({ tone: "info", title: "Reading your key", body: "The management key lives after the <span class=\"mono\">#</span> in this link, so it stays in your browser. Checking the paste now." })}
+		${notice({ tone: "info", title: "Reading your key", body: 'The management key lives after the <span class="mono">#</span> in this link, so it stays in your browser. Checking the paste now.' })}
 	</div>
 
 	<section class="card" data-manage-panel hidden>
@@ -67,7 +67,8 @@ export function renderManagePage(options: ManagePageOptions): string {
 		${notice({
 			tone: "info",
 			title: "JavaScript is off",
-			body: 'The management key is read from the URL fragment, which needs JavaScript. From a terminal you can delete a paste with <span class="mono">curl -X DELETE -H "Authorization: Bearer &lt;token&gt;" /api/pastes/' +
+			body:
+				'The management key is read from the URL fragment, which needs JavaScript. From a terminal you can delete a paste with <span class="mono">curl -X DELETE -H "Authorization: Bearer &lt;token&gt;" /api/pastes/' +
 				escapeHtml(options.id) +
 				"</span>.",
 		})}

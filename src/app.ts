@@ -91,10 +91,7 @@ export function createApp(): Hono<AppBindings> {
 	const allow = (methods: string[]) => (c: Context<AppBindings>) => {
 		c.header("Allow", methods.join(", "));
 		if (c.req.method === "OPTIONS") return c.body(null, 204);
-		return c.json(
-			{ error: "method_not_allowed", message: `Use ${methods.join(" or ")} on this address.` },
-			405,
-		);
+		return c.json({ error: "method_not_allowed", message: `Use ${methods.join(" or ")} on this address.` }, 405);
 	};
 
 	api.all("/pastes", allow(["POST", "OPTIONS"]));

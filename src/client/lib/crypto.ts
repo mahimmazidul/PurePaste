@@ -39,7 +39,10 @@ export function toBase64Url(bytes: Uint8Array): string {
 export function fromBase64Url(value: string): Uint8Array | null {
 	if (!/^[A-Za-z0-9_-]+$/.test(value)) return null;
 	try {
-		const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+		const padded = value
+			.replace(/-/g, "+")
+			.replace(/_/g, "/")
+			.padEnd(Math.ceil(value.length / 4) * 4, "=");
 		const binary = atob(padded);
 		const bytes = new Uint8Array(binary.length);
 		for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
@@ -133,10 +136,18 @@ export async function encryptEnvelope(
 	const contentIv = randomBytes(IV_LENGTH);
 
 	const metaCipher = new Uint8Array(
-		await crypto.subtle.encrypt({ name: "AES-GCM", iv: asBytes(metaIv), additionalData: META_AAD }, key, asBytes(metaBytes)),
+		await crypto.subtle.encrypt(
+			{ name: "AES-GCM", iv: asBytes(metaIv), additionalData: META_AAD },
+			key,
+			asBytes(metaBytes),
+		),
 	);
 	const contentCipher = new Uint8Array(
-		await crypto.subtle.encrypt({ name: "AES-GCM", iv: asBytes(contentIv), additionalData: CONTENT_AAD }, key, asBytes(content)),
+		await crypto.subtle.encrypt(
+			{ name: "AES-GCM", iv: asBytes(contentIv), additionalData: CONTENT_AAD },
+			key,
+			asBytes(content),
+		),
 	);
 
 	const total = MAGIC.length + 1 + 4 + IV_LENGTH + metaCipher.byteLength + IV_LENGTH + contentCipher.byteLength;

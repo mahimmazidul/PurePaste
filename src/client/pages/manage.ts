@@ -98,7 +98,16 @@ export function initManagePage(): void {
 		const list = qs<HTMLDListElement>("[data-manage-meta]");
 		if (list) {
 			const items: Array<[string, string]> = [
-				["Type", meta.encrypted ? "Encrypted paste" : meta.kind === "file" ? "File" : meta.kind === "redirect" ? "Link" : "Text"],
+				[
+					"Type",
+					meta.encrypted
+						? "Encrypted paste"
+						: meta.kind === "file"
+							? "File"
+							: meta.kind === "redirect"
+								? "Link"
+								: "Text",
+				],
 				["Size", formatBytes(meta.size_bytes)],
 				["Created", new Date(meta.created_at * 1000).toLocaleString()],
 				["Expires", new Date(meta.expires_at * 1000).toLocaleString()],
@@ -136,7 +145,6 @@ export function initManagePage(): void {
 
 		wireDelete(target.id, target.token);
 	}
-
 }
 
 function wireDelete(id: string, token: string): void {

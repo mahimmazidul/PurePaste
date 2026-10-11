@@ -23,10 +23,15 @@ export class ObjectStore {
 		return `${this.prefix}/${kind}/${id}`;
 	}
 
-	async put(key: string, value: ReadableStream | ArrayBuffer | Uint8Array | string, options: PutOptions = {}): Promise<void> {
+	async put(
+		key: string,
+		value: ReadableStream | ArrayBuffer | Uint8Array | string,
+		options: PutOptions = {},
+	): Promise<void> {
 		const httpMetadata: R2HTTPMetadata = {};
 		if (options.contentType) httpMetadata.contentType = options.contentType;
-		if (options.filename) httpMetadata.contentDisposition = `attachment; filename="${encodeURIComponent(options.filename)}"`;
+		if (options.filename)
+			httpMetadata.contentDisposition = `attachment; filename="${encodeURIComponent(options.filename)}"`;
 
 		await this.bucket.put(key, value, {
 			httpMetadata,

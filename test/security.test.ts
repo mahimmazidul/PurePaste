@@ -117,7 +117,7 @@ describe("page markup", () => {
 			const html = await (await request(path)).text();
 			expect(html).toContain('<html lang="en"');
 			expect(html).toContain('class="skip-link"');
-			expect(html).toContain("<main id=\"main\"");
+			expect(html).toContain('<main id="main"');
 			expect(html).toContain("<header");
 			expect(html).toContain("<footer");
 			expect(html).toContain('aria-label="Main"');

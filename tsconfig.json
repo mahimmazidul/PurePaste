@@ -1,23 +1,23 @@
 {
-	"compilerOptions": {
-		"target": "es2022",
-		"lib": ["es2022"],
-		"module": "es2022",
-		"moduleResolution": "bundler",
-		"types": [],
-		"strict": true,
-		"noUncheckedIndexedAccess": true,
-		"noImplicitOverride": true,
-		"noFallthroughCasesInSwitch": true,
-		"exactOptionalPropertyTypes": false,
-		"verbatimModuleSyntax": true,
-		"isolatedModules": true,
-		"skipLibCheck": true,
-		"noEmit": true,
-		"forceConsistentCasingInFileNames": true
-	},
-	"include": ["src/**/*.ts", "worker-configuration.d.ts"],
-	// src/client is typechecked separately, against the DOM library rather than the
-	// Workers runtime: see tsconfig.client.json.
-	"exclude": ["src/client"]
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2022"],
+    "module": "es2022",
+    "moduleResolution": "bundler",
+    "types": [],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": false,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/**/*.ts", "worker-configuration.d.ts"],
+  // src/client is typechecked separately, against the DOM library rather than the
+  // Workers runtime: see tsconfig.client.json.
+  "exclude": ["src/client"]
 }

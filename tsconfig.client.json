@@ -1,22 +1,22 @@
 {
-	"compilerOptions": {
-		"target": "es2022",
-		"lib": ["es2023", "dom", "dom.iterable"],
-		"module": "esnext",
-		"moduleResolution": "bundler",
-		"types": [],
-		"strict": true,
-		"noUncheckedIndexedAccess": true,
-		"noImplicitOverride": true,
-		"noFallthroughCasesInSwitch": true,
-		"verbatimModuleSyntax": true,
-		"isolatedModules": true,
-		"skipLibCheck": true,
-		"noEmit": true,
-		// qrcode-generator and highlight.js ship CommonJS typings; the bundler
-		// handles the interop and this keeps the types honest about it.
-		"esModuleInterop": true,
-		"forceConsistentCasingInFileNames": true
-	},
-	"include": ["src/client/**/*.ts"]
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": [],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    // qrcode-generator and highlight.js ship CommonJS typings; the bundler
+    // handles the interop and this keeps the types honest about it.
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/client/**/*.ts"]
 }

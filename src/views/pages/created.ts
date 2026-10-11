@@ -48,7 +48,8 @@ export function renderCreated(options: CreatedPageOptions): string {
 			id: "manage-link",
 			label: "Keep this link somewhere safe",
 			value: manageUrl,
-			description: "This is the only way to check on or delete the paste. We store a fingerprint of the key, not the key itself, so we can't send it again.",
+			description:
+				"This is the only way to check on or delete the paste. We store a fingerprint of the key, not the key itself, so we can't send it again.",
 		})}
 		<div class="notice-row">
 			${notice({

@@ -21,7 +21,9 @@ function flakyStores(failingKeys: Set<string>): Stores {
 }
 
 async function expire(id: string, msAgo = 1000): Promise<void> {
-	await testEnv.DB.prepare("UPDATE pastes SET expires_at = ? WHERE id = ?").bind(Date.now() - msAgo, id).run();
+	await testEnv.DB.prepare("UPDATE pastes SET expires_at = ? WHERE id = ?")
+		.bind(Date.now() - msAgo, id)
+		.run();
 }
 
 /** A paste small enough to live in D1, and one big enough to have an R2 object. */

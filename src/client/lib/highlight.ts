@@ -5,10 +5,6 @@
  */
 type HighlightResult = { value: string };
 
-interface HighlightJs {
-	highlight(code: string, options: { language: string; ignoreIllegals: boolean }): HighlightResult;
-}
-
 const GRAMMARS: Record<string, () => Promise<{ default: unknown }>> = {
 	bash: () => import("highlight.js/lib/languages/bash"),
 	c: () => import("highlight.js/lib/languages/c"),
@@ -51,7 +47,10 @@ export async function highlightBlock(block: HTMLElement, language: string): Prom
 
 	try {
 		const [{ default: hljs }, grammar] = await Promise.all([import("highlight.js/lib/core"), load()]);
-		const core = hljs as unknown as { registerLanguage(name: string, grammar: unknown): void; highlight(code: string, options: { language: string; ignoreIllegals: boolean }): HighlightResult };
+		const core = hljs as unknown as {
+			registerLanguage(name: string, grammar: unknown): void;
+			highlight(code: string, options: { language: string; ignoreIllegals: boolean }): HighlightResult;
+		};
 		if (!loaded.has(language)) {
 			core.registerLanguage(language, grammar.default);
 			loaded.add(language);

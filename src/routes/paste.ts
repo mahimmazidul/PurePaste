@@ -50,7 +50,10 @@ export function readCookie(header: string | undefined, name: string): string | n
 	return null;
 }
 
-function htmlError(context: Context<AppBindings>, options: { status: number; title: string; message: string; hint?: string }): Response {
+function htmlError(
+	context: Context<AppBindings>,
+	options: { status: number; title: string; message: string; hint?: string },
+): Response {
 	return context.html(
 		renderErrorPage({
 			config: context.get("config"),
@@ -104,7 +107,11 @@ export async function getPastePage(c: Context<AppBindings>): Promise<Response> {
 	}
 
 	if (record.kind === "redirect" && !config.redirectEnabled) {
-		return htmlError(c, { status: 404, title: "URL mode is off", message: "This instance no longer serves link pastes." });
+		return htmlError(c, {
+			status: 404,
+			title: "URL mode is off",
+			message: "This instance no longer serves link pastes.",
+		});
 	}
 
 	let inline: string | null = null;
@@ -114,7 +121,11 @@ export async function getPastePage(c: Context<AppBindings>): Promise<Response> {
 		else if (body.kind === "missing") {
 			// A row without a body means storage was lost mid-flight. Clean it up.
 			c.executionCtx.waitUntil(deletePaste(c.env, record).then(() => undefined));
-			return htmlError(c, { status: 404, title: "Nothing at this address", message: "This paste's contents are no longer available." });
+			return htmlError(c, {
+				status: 404,
+				title: "Nothing at this address",
+				message: "This paste's contents are no longer available.",
+			});
 		}
 	}
 
@@ -166,7 +177,9 @@ export async function getRawPaste(c: Context<AppBindings>): Promise<Response> {
 	}
 
 	// Encrypted payloads and files are handed over as opaque bytes.
-	const headers = objectHeaders(record.encrypted ? "application/octet-stream" : (record.contentType ?? "application/octet-stream"));
+	const headers = objectHeaders(
+		record.encrypted ? "application/octet-stream" : (record.contentType ?? "application/octet-stream"),
+	);
 	if (record.encrypted || record.kind === "file") {
 		headers.set("Content-Disposition", contentDisposition(record.filename ?? `${record.id}.bin`, false));
 	}
@@ -178,7 +191,9 @@ export async function getDownload(c: Context<AppBindings>): Promise<Response> {
 	const id = parseId(c.req.param("id"));
 	const result = await loadPaste(c.env, id, { now: Date.now() });
 	if (result.status === "needs-reveal") {
-		return jsonOrText(c, false, 403, "This link opens once. Use the reveal page to claim it.", { error: "confirmation_required" });
+		return jsonOrText(c, false, 403, "This link opens once. Use the reveal page to claim it.", {
+			error: "confirmation_required",
+		});
 	}
 	if (result.status !== "ok") return notAvailable(c, result.status, false);
 
@@ -199,7 +214,9 @@ export async function getDownload(c: Context<AppBindings>): Promise<Response> {
 	if (body.kind === "missing") return notAvailable(c, "missing", false);
 
 	const filename = record.kind === "file" ? (record.filename ?? record.id) : `${record.id}.txt`;
-	const headers = objectHeaders(record.kind === "file" ? (record.contentType ?? "application/octet-stream") : "text/plain; charset=utf-8");
+	const headers = objectHeaders(
+		record.kind === "file" ? (record.contentType ?? "application/octet-stream") : "text/plain; charset=utf-8",
+	);
 	headers.set("Content-Disposition", contentDisposition(filename, false));
 
 	if (body.kind === "inline") {
@@ -230,7 +247,12 @@ export async function revealPaste(c: Context<AppBindings>): Promise<Response> {
 		return c.redirect(`/${id}`, 303);
 	}
 
-	const unlock = await checkUnlocked(c, existing.record.id, existing.record.passwordVerifier, existing.record.passwordSalt);
+	const unlock = await checkUnlocked(
+		c,
+		existing.record.id,
+		existing.record.passwordVerifier,
+		existing.record.passwordSalt,
+	);
 	if (!unlock.unlocked) {
 		return jsonOrText(c, format === "json", 401, "This paste needs a password.", { error: "password_required" });
 	}
@@ -243,14 +265,18 @@ export async function revealPaste(c: Context<AppBindings>): Promise<Response> {
 	if (body.kind === "missing") return notAvailable(c, "missing", format === "json");
 	if (body.kind === "redirect") {
 		// A one-time link: the claim is what releases it, so send the visitor on.
-		return format === "json" ? c.json({ id: claimed.id, kind: "redirect", redirect_url: body.url, burned: true }) : c.redirect(body.url, 303);
+		return format === "json"
+			? c.json({ id: claimed.id, kind: "redirect", redirect_url: body.url, burned: true })
+			: c.redirect(body.url, 303);
 	}
 
 	const goneNotice = "This paste has been burned. It is gone for good, so copy anything you still need.";
 
 	if (body.kind === "object" && (claimed.kind === "file" || body.object.size > MAX_INLINE_RENDER_BYTES)) {
 		// Too big to put inside a page, and the raw routes are closed now: hand back the bytes.
-		const headers = objectHeaders(claimed.encrypted ? "application/octet-stream" : (claimed.contentType ?? "text/plain; charset=utf-8"));
+		const headers = objectHeaders(
+			claimed.encrypted ? "application/octet-stream" : (claimed.contentType ?? "text/plain; charset=utf-8"),
+		);
 		if (claimed.kind === "file" || claimed.encrypted) {
 			headers.set("Content-Disposition", contentDisposition(claimed.filename ?? `${claimed.id}.bin`, false));
 		}
@@ -315,7 +341,11 @@ function notAvailable(c: Context<AppBindings>, status: string, wantsJson: boolea
 	if (status === "consumed") {
 		return wantsJson
 			? c.json({ error: "consumed", message: "This one-time paste has already been opened." }, 410)
-			: htmlError(c, { status: 410, title: "Already opened", message: "This was a one-time link, and it has been used." });
+			: htmlError(c, {
+					status: 410,
+					title: "Already opened",
+					message: "This was a one-time link, and it has been used.",
+				});
 	}
 	return wantsJson
 		? c.json({ error: "not_found", message: "This paste doesn't exist." }, 404)
@@ -332,4 +362,3 @@ function jsonOrText(
 	if (wantsJson) return c.json({ error: extra.error ?? "error", message, ...extra }, status);
 	return new Response(message, { status, headers: objectHeaders("text/plain; charset=utf-8") });
 }
-

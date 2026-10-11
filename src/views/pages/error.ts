@@ -12,9 +12,7 @@ export interface ErrorPageOptions {
 }
 
 export function renderErrorPage(options: ErrorPageOptions): string {
-	const hint = options.hint
-		? `<p class="lede">${escapeHtml(options.hint)}</p>`
-		: "";
+	const hint = options.hint ? `<p class="lede">${escapeHtml(options.hint)}</p>` : "";
 	const detail = options.detail
 		? `<details class="advanced"><summary>More detail</summary><div class="advanced-body"><p class="field-note mono">${escapeHtml(options.detail)}</p></div></details>`
 		: "";

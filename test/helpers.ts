@@ -70,18 +70,16 @@ export async function resetStorage(): Promise<void> {
 export async function deriveVerifier(password: string, saltHex: string, iterations: number): Promise<string> {
 	const salt = new Uint8Array(saltHex.match(/.{2}/g)!.map((pair) => Number.parseInt(pair, 16)));
 	const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
-	const bits = await crypto.subtle.deriveBits(
-		{ name: "PBKDF2", salt, iterations, hash: "SHA-256" },
-		key,
-		256,
-	);
+	const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations, hash: "SHA-256" }, key, 256);
 	const bytes = new Uint8Array(bits);
 	let binary = "";
 	for (const byte of bytes) binary += String.fromCharCode(byte);
 	return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-export async function makePasswordMaterial(password: string): Promise<{ salt: string; verifier: string; iterations: number }> {
+export async function makePasswordMaterial(
+	password: string,
+): Promise<{ salt: string; verifier: string; iterations: number }> {
 	const saltBytes = crypto.getRandomValues(new Uint8Array(16));
 	const salt = [...saltBytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 	const iterations = 100_000; // fast enough for tests, above the enforced floor

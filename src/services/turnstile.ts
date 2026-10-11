@@ -11,7 +11,12 @@ const SITEVERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverif
  * cannot be reached, the paste is not created. API clients are not affected —
  * callers using the JSON API are expected to be rate limited at the edge.
  */
-export async function verifyTurnstile(env: AppEnv, config: Config, token: string | null, ip: string | null): Promise<void> {
+export async function verifyTurnstile(
+	env: AppEnv,
+	config: Config,
+	token: string | null,
+	ip: string | null,
+): Promise<void> {
 	if (!config.turnstileEnabled) return;
 
 	const secret = env.TURNSTILE_SECRET_KEY;

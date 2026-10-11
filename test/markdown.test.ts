@@ -9,9 +9,7 @@ import { createPaste, readJson, request, resetStorage, testConfig } from "./help
  */
 describe("markdown rendering", () => {
 	it("escapes every character that could start a tag", () => {
-		expect(escapeHtml('<script>alert("x")</script>')).toBe(
-			"&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;",
-		);
+		expect(escapeHtml('<script>alert("x")</script>')).toBe("&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;");
 	});
 
 	it("turns raw script tags into text", () => {
@@ -68,7 +66,9 @@ describe("markdown rendering", () => {
 	});
 
 	it("renders the formatting it promises", () => {
-		const html = renderMarkdown("# Title\n\nSome **bold** and *italic* and ~~gone~~.\n\n- one\n- two\n\n1. first\n\n> quoted\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n---");
+		const html = renderMarkdown(
+			"# Title\n\nSome **bold** and *italic* and ~~gone~~.\n\n- one\n- two\n\n1. first\n\n> quoted\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n---",
+		);
 		expect(html).toContain("<h1>Title</h1>");
 		expect(html).toContain("<strong>bold</strong>");
 		expect(html).toContain("<em>italic</em>");
@@ -98,7 +98,9 @@ describe("markdown rendering", () => {
 
 	it("leaves no attribute other than the ones it writes itself", () => {
 		expect(stripDisallowedTags('<p style="position:fixed">x</p>')).toBe("<p>x</p>");
-		expect(stripDisallowedTags('<code class="language-js" onmouseover="x">y</code>')).toBe('<code class="language-js">y</code>');
+		expect(stripDisallowedTags('<code class="language-js" onmouseover="x">y</code>')).toBe(
+			'<code class="language-js">y</code>',
+		);
 	});
 });
 

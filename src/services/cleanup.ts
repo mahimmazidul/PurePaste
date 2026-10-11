@@ -37,15 +37,29 @@ export async function sweep(store: Stores, config: Config, now = Date.now()): Pr
 		deferred: 0,
 	};
 
-	report.batches += await sweepPass(report, "expired", async () => {
-		const rows = await meta.listExpired(now, config.cleanupBatchSize);
-		return rows;
-	}, objects, meta, config);
+	report.batches += await sweepPass(
+		report,
+		"expired",
+		async () => {
+			const rows = await meta.listExpired(now, config.cleanupBatchSize);
+			return rows;
+		},
+		objects,
+		meta,
+		config,
+	);
 
-	report.batches += await sweepPass(report, "consumed", async () => {
-		const rows = await meta.listConsumed(now - CONSUMED_GRACE_MS, config.cleanupBatchSize);
-		return rows;
-	}, objects, meta, config);
+	report.batches += await sweepPass(
+		report,
+		"consumed",
+		async () => {
+			const rows = await meta.listConsumed(now - CONSUMED_GRACE_MS, config.cleanupBatchSize);
+			return rows;
+		},
+		objects,
+		meta,
+		config,
+	);
 
 	return report;
 }
