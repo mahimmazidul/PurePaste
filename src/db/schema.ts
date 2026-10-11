@@ -20,4 +20,19 @@ export const pastes = pgTable(
   (t) => [index("pastes_expires_idx").on(t.expiresAt)],
 );
 
+export const links = pgTable(
+  "links",
+  {
+    id: text("id").primaryKey(),
+    url: text("url").notNull(),
+    burn: boolean("burn").notNull().default(false),
+    manageToken: text("manage_token").notNull(),
+    visits: integer("visits").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("links_expires_idx").on(t.expiresAt)],
+);
+
 export type PasteRow = typeof pastes.$inferSelect;
+export type LinkRow = typeof links.$inferSelect;
