@@ -279,6 +279,12 @@ async function parseRequest(
 		};
 	}
 
+	// Nothing else is guessed at. A body that arrives labelled as something this
+	// service does not handle is refused rather than stored as mangled text.
+	if (!isTextualContentType(contentType)) {
+		throw fail.unsupportedMediaType("Send JSON, plain text, a form, or a file.");
+	}
+
 	const text = await c.req.text();
 	if (!encrypted && new TextEncoder().encode(text).byteLength > c.get("config").textMaxBytes) {
 		throw fail.tooLarge(`${Math.floor(c.get("config").textMaxBytes / 1024 / 1024)} MiB`);
@@ -293,6 +299,34 @@ async function parseRequest(
 		formValues: { ...queryValues, content: text },
 		encryptRequested: false,
 	};
+}
+
+/** Content types that can be read as text without losing the plot. */
+const TEXTUAL_TYPES = [
+	"application/json",
+	"application/x-ndjson",
+	"application/ld+json",
+	"application/xml",
+	"application/yaml",
+	"application/x-yaml",
+	"application/toml",
+	"application/javascript",
+	"application/sql",
+	"application/graphql",
+	"application/x-sh",
+	"application/x-httpd-php",
+	"application/x-perl",
+	"application/x-python",
+	"application/x-ruby",
+	"application/csv",
+];
+
+function isTextualContentType(contentType: string): boolean {
+	const type = contentType.split(";")[0]?.trim() ?? "";
+	if (!type) return true;
+	if (type.startsWith("text/")) return true;
+	if (type.endsWith("+json") || type.endsWith("+xml")) return true;
+	return TEXTUAL_TYPES.includes(type);
 }
 
 function assemble(parsed: ParsedRequest, config: Config): CreatePasteInput {

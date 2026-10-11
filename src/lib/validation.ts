@@ -54,6 +54,10 @@ export function parseRedirectUrl(raw: unknown): string {
 	if (typeof raw !== "string") throw fail.invalidUrl();
 	const trimmed = raw.trim();
 	if (!trimmed || trimmed.length > REDIRECT_MAX_LENGTH) throw fail.invalidUrl();
+	// Control characters are refused rather than cleaned up. The URL parser drops
+	// some of them silently, which would hide an attempt to smuggle a value into a
+	// header or into a line of terminal output.
+	if (/[\u0000-\u001f\u007f]/.test(trimmed)) throw fail.invalidUrl();
 
 	let url: URL;
 	try {
@@ -64,9 +68,12 @@ export function parseRedirectUrl(raw: unknown): string {
 	if (url.protocol !== "http:" && url.protocol !== "https:") throw fail.invalidUrl();
 	if (!url.hostname || url.hostname.includes(" ")) throw fail.invalidUrl();
 	if (url.username || url.password) throw fail.invalidUrl();
-	// Never allow a destination that points back at ourselves: that turns the
-	// interstitial into a redirect loop.
-	return url.toString();
+
+	// The stored value is the parser's normalized form, so scheme and host case are
+	// settled here and nothing downstream has to guess.
+	const normalized = url.toString();
+	if (normalized.length > REDIRECT_MAX_LENGTH) throw fail.invalidUrl();
+	return normalized;
 }
 
 export function parseExpiration(raw: unknown, config: Config): number {

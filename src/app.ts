@@ -85,6 +85,25 @@ export function createApp(): Hono<AppBindings> {
 		});
 	});
 
+	// A path that exists but not for this method is answered plainly, with the
+	// methods that do work. Without this, Hono would report 404 and send a client
+	// looking for a bug that is not there.
+	const allow = (methods: string[]) => (c: Context<AppBindings>) => {
+		c.header("Allow", methods.join(", "));
+		if (c.req.method === "OPTIONS") return c.body(null, 204);
+		return c.json(
+			{ error: "method_not_allowed", message: `Use ${methods.join(" or ")} on this address.` },
+			405,
+		);
+	};
+
+	api.all("/pastes", allow(["POST", "OPTIONS"]));
+	api.all("/pastes/:id", allow(["GET", "DELETE", "OPTIONS"]));
+	api.all("/pastes/:id/raw", allow(["GET", "OPTIONS"]));
+	api.all("/pastes/:id/unlock", allow(["POST", "OPTIONS"]));
+	api.all("/pastes/:id/reveal", allow(["POST", "OPTIONS"]));
+	api.all("/config", allow(["GET", "OPTIONS"]));
+
 	app.route("/api", api);
 
 	/* --------------------- paste routes --------------------- */
@@ -106,6 +125,10 @@ export function createApp(): Hono<AppBindings> {
 export function renderError(error: unknown, c: Context<AppBindings>): Response {
 	const appError: AppError = isAppError(error) ? error : fail.internal();
 	const config = c.get("config");
+
+	// A client that is being throttled should be told when to come back rather than
+	// left to guess. The window is a minute everywhere in this application.
+	if (appError.status === 429) c.header("Retry-After", "60");
 	const wantsJson = negotiate(c, c.req.path.startsWith("/api/") ? "json" : "html") === "json";
 
 	if (!isAppError(error)) {

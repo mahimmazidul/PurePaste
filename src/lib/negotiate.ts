@@ -9,8 +9,11 @@ export type ResponseFormat = "html" | "json" | "text";
  * wins, then the Accept header, then the route's default.
  */
 export function negotiate(c: Context, fallback: ResponseFormat = "html"): ResponseFormat {
+	// `url` is the terminal shorthand for "just give me the link", so it is the
+	// same response as plain text.
 	const explicit = c.req.query("format")?.toLowerCase();
 	if (explicit === "json" || explicit === "text" || explicit === "html") return explicit;
+	if (explicit === "url") return "text";
 
 	const accept = c.req.header("accept") ?? "";
 	if (accept.includes("application/json")) return "json";
