@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="PurePaste">
+	<rect width="32" height="32" rx="8" fill="#f8fcf8"/>
+	<circle cx="28" cy="4" r="6.5" fill="#ed7892"/>
+	<mask id="bite">
+		<rect width="32" height="32" fill="#fff"/>
+		<circle cx="28" cy="4" r="6.6" fill="#000"/>
+	</mask>
+	<g mask="url(#bite)">
+		<rect x="4" y="4" width="24" height="24" rx="7" fill="#ffffff" stroke="#8fb69c" stroke-width="1.6"/>
+		<path d="M9.5 13.5h8M9.5 17.6h10M9.5 21.7h6" stroke="#54aa71" stroke-width="2.1" stroke-linecap="round"/>
+	</g>
+	<circle cx="23" cy="11" r="1.4" fill="#ed7892"/>
+</svg>

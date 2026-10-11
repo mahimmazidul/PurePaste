@@ -16,5 +16,8 @@
 		"noEmit": true,
 		"forceConsistentCasingInFileNames": true
 	},
-	"include": ["src/**/*.ts", "worker-configuration.d.ts"]
+	"include": ["src/**/*.ts", "worker-configuration.d.ts"],
+	// src/client is typechecked separately, against the DOM library rather than the
+	// Workers runtime: see tsconfig.client.json.
+	"exclude": ["src/client"]
 }

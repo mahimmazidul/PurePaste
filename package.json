@@ -14,7 +14,7 @@
 		"build": "npm run build:client",
 		"build:client": "node scripts/build-client.mjs",
 		"build:client:watch": "node scripts/build-client.mjs --watch",
-		"typecheck": "npm run types && tsc -p tsconfig.json --noEmit && tsc -p test/tsconfig.json --noEmit",
+		"typecheck": "npm run types && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p test/tsconfig.json --noEmit",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"format": "prettier --write .",

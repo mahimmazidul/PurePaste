@@ -177,7 +177,7 @@ export function renderHome(options: HomeOptions): string {
 						<p class="field-note" id="password-note">Checked in your browser before anything is sent, so we never see your password. Readers enter it once, then get a short-lived session for that paste.</p>
 						<input type="hidden" name="password_salt" data-password-salt>
 						<input type="hidden" name="password_verifier" data-password-verifier>
-						<input type="hidden" name="password_iterations" data-password-iterations>
+						<input type="hidden" name="password_iterations" value="${config.passwordIterations}" data-password-iterations>
 					</div>
 
 					<label class="check js-only" data-js-only data-encrypt-toggle>
