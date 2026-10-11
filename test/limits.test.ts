@@ -226,6 +226,35 @@ describe("encrypted pastes", () => {
 		expect(response.status).toBe(400);
 	});
 
+	it("accepts the envelope the browser posts as a form part", async () => {
+		// This is the path the editor takes when somebody ticks "Encrypt in my
+		// browser": a multipart form with the envelope as a `payload` part.
+		const bytes = envelope("posted from the editor");
+		const form = new FormData();
+		form.set("encrypted", "1");
+		form.set("expire", "1d");
+		form.set("payload", new File([bytes], "payload.bin", { type: "application/octet-stream" }));
+
+		const response = await request("/api/pastes", {
+			method: "POST",
+			body: form,
+			headers: { Accept: "application/json" },
+		});
+		const created = await readJson<{ id: string; encrypted: boolean }>(response);
+
+		expect(response.status).toBe(201);
+		expect(created.encrypted).toBe(true);
+
+		const row = await readRow(created.id);
+		expect(row?.encrypted).toBe(1);
+		expect(row?.kind).toBe("text");
+		expect(row?.object_key).toBe(`pp/v1/blob/${created.id}`);
+		expect(row?.size_bytes).toBe(bytes.byteLength);
+
+		const raw = await request(`/raw/${created.id}`);
+		expect(new Uint8Array(await raw.arrayBuffer())).toEqual(bytes);
+	});
+
 	it("keeps the stored object opaque even when the paste is deleted", async () => {
 		const created = await readJson<{ id: string; manage_token: string }>(
 			await request("/api/pastes?encrypted=1", {

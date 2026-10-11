@@ -177,6 +177,29 @@ async function parseRequest(
 
 		const turnstileToken = get("cf-turnstile-response");
 
+		// The browser encrypts the payload itself and posts the envelope as a part,
+		// so the form needs no query string and works with the plain editor form.
+		// A form that asks for encryption without sending an envelope falls through
+		// to the ordinary path, which explains that encryption needs JavaScript.
+		const payloadPart = form.get("payload");
+		const payloadFile =
+			payloadPart && typeof payloadPart === "object" && "arrayBuffer" in payloadPart ? (payloadPart as File) : null;
+		if ((parseFlag(get("encrypted")) || parseFlag(get("encrypt"))) && payloadFile && payloadFile.size > 0) {
+			if (payloadFile.size > c.get("config").fileMaxBytes) {
+				throw fail.tooLarge(`${Math.floor(c.get("config").fileMaxBytes / 1024 / 1024)} MiB`);
+			}
+			return {
+				raw,
+				kindHint: "encrypted",
+				text: null,
+				bytes: new Uint8Array(await payloadFile.arrayBuffer()),
+				file: null,
+				turnstileToken,
+				formValues,
+				encryptRequested: true,
+			};
+		}
+
 		if (get("kind") === "redirect") {
 			return {
 				raw,
