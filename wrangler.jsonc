@@ -1,0 +1,71 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "purepaste",
+	"main": "src/index.ts",
+	// Set to today's date when you fork this project. Newer dates opt in to newer runtime behaviour.
+	"compatibility_date": "2026-10-01",
+	// No hostname is hard-coded anywhere in the application: URLs are built from the incoming request,
+	// so the same build works on workers.dev, a custom domain, or a preview URL.
+	"workers_dev": true,
+	// Static assets (CSS, self-hosted fonts, client scripts) are served directly by Cloudflare without
+	// invoking the Worker. Every dynamic route falls through to the Worker.
+	"assets": {
+		"directory": "./public",
+		"binding": "ASSETS",
+		"not_found_handling": "none"
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "purepaste",
+			// Replace with the id printed by: npm run db:create
+			"database_id": "00000000-0000-0000-0000-000000000000",
+			"migrations_dir": "migrations"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "BUCKET",
+			// Replace with the bucket you create: npm run bucket:create
+			"bucket_name": "purepaste-blobs"
+		}
+	],
+	// Hourly cleanup of expired and consumed pastes. Cloudflare cron runs in UTC.
+	"triggers": {
+		"crons": ["17 * * * *"]
+	},
+	// Cloudflare-native edge rate limiting. These bindings are optional at runtime: if they are
+	// removed, the application keeps working and only the rate limiting is skipped.
+	"ratelimits": [
+		{
+			"name": "CREATE_LIMITER",
+			"namespace_id": "1001",
+			"simple": { "limit": 30, "period": 60 }
+		},
+		{
+			"name": "UNLOCK_LIMITER",
+			"namespace_id": "1002",
+			"simple": { "limit": 20, "period": 60 }
+		}
+	],
+	"vars": {
+		// Hard ceiling for every paste. The application clamps this to 30 days even if raised here.
+		"MAX_TTL_SECONDS": "2592000",
+		"DEFAULT_TTL_SECONDS": "604800",
+		"INLINE_TEXT_MAX_BYTES": "65536",
+		"TEXT_MAX_BYTES": "10485760",
+		"FILE_MAX_BYTES": "26214400",
+		"PASSWORD_ITERATIONS": "210000",
+		"UNLOCK_COOKIE_TTL_SECONDS": "1800",
+		"FEATURE_REDIRECT": "on",
+		"FEATURE_VIEW_COUNTING": "off",
+		"FEATURE_TURNSTILE": "off",
+		"CLEANUP_BATCH_SIZE": "100",
+		"CLEANUP_MAX_BATCHES": "5"
+	},
+	"observability": {
+		"enabled": true,
+		// Query strings can contain secrets in poorly behaved clients; keep them out of logs.
+		"redact_query_string": true
+	}
+}

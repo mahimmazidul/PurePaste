@@ -1,0 +1,47 @@
+{
+	"name": "purepaste",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"description": "PurePaste — a small, accountless paste and file sharing service for Cloudflare Workers.",
+	"license": "MIT",
+	"engines": {
+		"node": ">=22"
+	},
+	"scripts": {
+		"types": "wrangler types",
+		"dev": "node scripts/dev.mjs",
+		"build": "npm run build:client",
+		"build:client": "node scripts/build-client.mjs",
+		"build:client:watch": "node scripts/build-client.mjs --watch",
+		"typecheck": "npm run types && tsc -p tsconfig.json --noEmit && tsc -p test/tsconfig.json --noEmit",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"format": "prettier --write .",
+		"format:check": "prettier --check .",
+		"lint": "eslint .",
+		"db:create": "wrangler d1 create purepaste",
+		"bucket:create": "wrangler r2 bucket create purepaste-blobs",
+		"migrate:local": "wrangler d1 migrations apply purepaste --local",
+		"migrate:remote": "wrangler d1 migrations apply purepaste --remote",
+		"preflight": "node scripts/preflight.mjs",
+		"deploy": "npm run preflight && npm run build:client && wrangler deploy"
+	},
+	"dependencies": {
+		"hono": "^4.13.13"
+	},
+	"devDependencies": {
+		"@cloudflare/vitest-plugin": "^1.4.0",
+		"@eslint/js": "^9.39.1",
+		"@types/node": "^24.19.2",
+		"esbuild": "^0.28.2",
+		"eslint": "^9.39.1",
+		"highlight.js": "^11.12.0",
+		"prettier": "^3.6.2",
+		"qrcode-generator": "^1.5.2",
+		"typescript": "^5.9.3",
+		"typescript-eslint": "^8.46.1",
+		"vitest": "^4.1.11",
+		"wrangler": "^4.149.0"
+	}
+}
