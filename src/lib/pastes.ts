@@ -107,3 +107,74 @@ export async function createPaste(input: CreatePasteInput): Promise<CreatePasteR
   }
   return { ok: false, status: 500, error: "Could not save that slip — please try again." };
 }
+
+export async function getPasteRow(id: string): Promise<PasteRow | null> {
+  const rows = await db.select().from(pastes).where(eq(pastes.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+/** Deletes the row if past expiry; returns null when the paste is unavailable. */
+export async function getLivePaste(id: string): Promise<PasteRow | null> {
+  const row = await getPasteRow(id);
+  if (!row) return null;
+  if (row.expiresAt.getTime() <= Date.now()) {
+    await db.delete(pastes).where(eq(pastes.id, id)).catch(() => {});
+    return null;
+  }
+  return row;
+}
+
+export function toPastePayload(row: PasteRow): PastePayload {
+  return {
+    id: row.id,
+    title: row.title,
+    content: row.content,
+    language: row.language,
+    format: row.format === "markdown" ? "markdown" : "code",
+    burn: row.burn,
+    views: row.views,
+    sizeBytes: row.sizeBytes,
+    createdAt: row.createdAt.toISOString(),
+    expiresAt: row.expiresAt.toISOString(),
+  };
+}
+
+export async function countView(id: string): Promise<void> {
+  await db
+    .update(pastes)
+    .set({ views: sql`${pastes.views} + 1` })
+    .where(eq(pastes.id, id));
+}
+
+export type RevealResult =
+  | { ok: true; payload: PastePayload }
+  | { ok: false; status: number; error: string };
+
+/**
+ * Unlocks a protected paste. Burns (deletes) it when marked burn-after-reading.
+ */
+export async function revealPaste(id: string, password?: string): Promise<RevealResult> {
+  const row = await getLivePaste(id);
+  if (!row) return { ok: false, status: 404, error: "Nothing lives at this address anymore." };
+  if (row.passwordHash) {
+    if (!password) return { ok: false, status: 401, error: "A password is required." };
+    if (!verifyPassword(password, row.passwordHash)) {
+      return { ok: false, status: 403, error: "That password doesn't fit." };
+    }
+  }
+  await countView(id);
+  const payload = toPastePayload({ ...row, views: row.views + 1 });
+  if (row.burn) {
+    await db.delete(pastes).where(eq(pastes.id, id)).catch(() => {});
+  }
+  return { ok: true, payload };
+}
+
+export async function deletePaste(id: string, token: string): Promise<boolean> {
+  if (!token) return false;
+  const result = await db
+    .delete(pastes)
+    .where(and(eq(pastes.id, id), eq(pastes.manageToken, token)))
+    .returning({ id: pastes.id });
+  return result.length > 0;
+}
