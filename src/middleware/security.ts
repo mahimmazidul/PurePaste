@@ -35,7 +35,7 @@ export function isContentRoute(path: string): boolean {
 
 /** Pages that are meant to be found by search engines, plus robots.txt itself. */
 export function isPublicShellPath(path: string): boolean {
-	return path === "/" || path === "/about" || path === "/pastes" || path === "/robots.txt";
+	return path === "/" || path === "/about" || path === "/licenses" || path === "/pastes" || path === "/robots.txt";
 }
 
 /**

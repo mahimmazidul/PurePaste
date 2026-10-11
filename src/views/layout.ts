@@ -132,7 +132,7 @@ ${options.body}
 <footer class="site-footer">
 	<div class="shell footer-inner">
 		<p>No accounts. No tracking. Everything here expires on its own.</p>
-		<p class="footer-links"><a href="/about">How it works</a> · <a href="/pastes">My pastes</a></p>
+		<p class="footer-links"><a href="/about">How it works</a> · <a href="/pastes">My pastes</a> · <a href="/licenses">Licences</a></p>
 	</div>
 </footer>
 <div class="toast-stack" data-toasts aria-live="polite" aria-atomic="false"></div>

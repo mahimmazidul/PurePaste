@@ -13,6 +13,7 @@ import { deleteManagedPaste, getMetadata, unlockPaste } from "./routes/manage";
 import { renderAboutPage } from "./views/pages/about";
 import { renderErrorPage } from "./views/pages/error";
 import { renderHistoryPage } from "./views/pages/history";
+import { renderLicensesPage } from "./views/pages/licenses";
 import { renderHome } from "./views/pages/home";
 import { renderManagePage } from "./views/pages/manage";
 
@@ -42,6 +43,7 @@ export function createApp(): Hono<AppBindings> {
 	app.get("/", (c) => c.html(renderHome({ config: c.get("config") })));
 	app.get("/pastes", (c) => c.html(renderHistoryPage(c.get("config"))));
 	app.get("/about", (c) => c.html(renderAboutPage(c.get("config"))));
+	app.get("/licenses", (c) => c.html(renderLicensesPage(c.get("config"))));
 	app.get("/robots.txt", (c) => c.text("User-agent: *\nDisallow: /\n"));
 
 	app.post("/", rateLimit("create"), async (c) => {

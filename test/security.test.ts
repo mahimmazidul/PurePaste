@@ -148,6 +148,20 @@ describe("page markup", () => {
 		expect(html).toContain("There's a problem with that paste");
 	});
 
+	it("credits the typefaces and scripts it serves itself", async () => {
+		const response = await request("/licenses");
+		const html = await response.text();
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get("X-Robots-Tag")).toBeNull();
+		expect(html).toContain("Manrope");
+		expect(html).toContain("IBM Plex Mono");
+		expect(html).toContain("SIL Open Font Licence");
+		expect(html).toContain("/assets/licenses/highlight.js-BSD.txt");
+		// The footer links every public page to it.
+		expect(await (await request("/about")).text()).toContain('href="/licenses"');
+	});
+
 	it("keeps the reveal page free of the paste itself", async () => {
 		const created = await request("/api/pastes", {
 			method: "POST",

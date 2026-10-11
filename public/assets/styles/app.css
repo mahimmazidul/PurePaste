@@ -1122,6 +1122,33 @@ main {
   color: var(--danger);
 }
 
+.licence-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.licence-item {
+  padding-bottom: 1.1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.licence-item:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.licence-item .lede {
+  margin-bottom: 0.35rem;
+}
+
+.licence-item .field-note {
+  margin: 0;
+}
+
 /* ------------------------------------------------------------- dialogs --- */
 
 dialog {
