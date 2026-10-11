@@ -12,6 +12,10 @@
     {
       "files": ["*.json", "*.jsonc", "*.yml", "*.yaml", "*.md", "*.css"],
       "options": { "useTabs": false, "tabWidth": 2 }
+    },
+    {
+      "files": ["*.jsonc"],
+      "options": { "trailingComma": "none" }
     }
   ]
 }

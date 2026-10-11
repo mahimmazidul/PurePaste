@@ -12,7 +12,7 @@
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    "not_found_handling": "none",
+    "not_found_handling": "none"
   },
   "d1_databases": [
     {
@@ -20,19 +20,19 @@
       "database_name": "purepaste",
       // Replace with the id printed by: npm run db:create
       "database_id": "00000000-0000-0000-0000-000000000000",
-      "migrations_dir": "migrations",
-    },
+      "migrations_dir": "migrations"
+    }
   ],
   "r2_buckets": [
     {
       "binding": "BUCKET",
       // Replace with the bucket you create: npm run bucket:create
-      "bucket_name": "purepaste-blobs",
-    },
+      "bucket_name": "purepaste-blobs"
+    }
   ],
   // Hourly cleanup of expired and consumed pastes. Cloudflare cron runs in UTC.
   "triggers": {
-    "crons": ["17 * * * *"],
+    "crons": ["17 * * * *"]
   },
   // Cloudflare-native edge rate limiting. These bindings are optional at runtime: if they are
   // removed, the application keeps working and only the rate limiting is skipped.
@@ -40,13 +40,13 @@
     {
       "name": "CREATE_LIMITER",
       "namespace_id": "1001",
-      "simple": { "limit": 30, "period": 60 },
+      "simple": { "limit": 30, "period": 60 }
     },
     {
       "name": "UNLOCK_LIMITER",
       "namespace_id": "1002",
-      "simple": { "limit": 20, "period": 60 },
-    },
+      "simple": { "limit": 20, "period": 60 }
+    }
   ],
   "vars": {
     // Hard ceiling for every paste. The application clamps this to 30 days even if raised here.
@@ -61,11 +61,11 @@
     "FEATURE_VIEW_COUNTING": "off",
     "FEATURE_TURNSTILE": "off",
     "CLEANUP_BATCH_SIZE": "100",
-    "CLEANUP_MAX_BATCHES": "5",
+    "CLEANUP_MAX_BATCHES": "5"
   },
   "observability": {
     "enabled": true,
     // Query strings can contain secrets in poorly behaved clients; keep them out of logs.
-    "redact_query_string": true,
-  },
+    "redact_query_string": true
+  }
 }

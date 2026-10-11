@@ -14,8 +14,11 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const problems = [];
 const warnings = [];
 
-/** Strips // and /* ... *\/ comments, leaving strings untouched. */
-function stripJsonc(text) {
+/**
+ * Reads a `wrangler.jsonc` file the way Wrangler does: comments are allowed, and
+ * so are the trailing commas that people leave behind in JSONC.
+ */
+function stripComments(text) {
 	let out = "";
 	let inString = false;
 	let inLine = false;
@@ -64,7 +67,44 @@ function stripJsonc(text) {
 		}
 		out += char;
 	}
+
 	return out;
+}
+
+/** Drops the comma that JSONC allows before a closing brace or bracket. */
+function stripTrailingCommas(text) {
+	let out = "";
+	let inString = false;
+	let escaped = false;
+
+	for (let index = 0; index < text.length; index += 1) {
+		const char = text[index];
+
+		if (inString) {
+			out += char;
+			if (escaped) escaped = false;
+			else if (char === "\\") escaped = true;
+			else if (char === '"') inString = false;
+			continue;
+		}
+		if (char === '"') {
+			inString = true;
+			out += char;
+			continue;
+		}
+		if (char === ",") {
+			let ahead = index + 1;
+			while (ahead < text.length && /\s/.test(text[ahead])) ahead += 1;
+			if (text[ahead] === "}" || text[ahead] === "]") continue;
+		}
+		out += char;
+	}
+
+	return out;
+}
+
+function parseJsonc(raw) {
+	return JSON.parse(stripTrailingCommas(stripComments(raw)));
 }
 
 async function exists(path) {
@@ -91,7 +131,7 @@ if (!(await exists(configPath))) {
 	const raw = await readFile(configPath, "utf8");
 	let config = null;
 	try {
-		config = JSON.parse(stripJsonc(raw));
+		config = parseJsonc(raw);
 	} catch (error) {
 		problems.push(`wrangler.jsonc could not be parsed: ${error.message}`);
 	}

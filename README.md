@@ -315,6 +315,19 @@ curl -s -X POST https://paste.example.com/api/pastes \
   -d '{"content":"one time only","burn":true,"expire":"1h"}'
 ```
 
+An encrypted payload is sent as opaque bytes. The envelope is built in the browser, so this is the same shape the editor posts — either as raw bytes with `?encrypted=1`, or as the `payload` part of a form:
+
+```bash
+curl -s -X POST "https://paste.example.com/api/pastes?encrypted=1&expire=1d" \
+  -H "Content-Type: application/octet-stream" -H "Accept: text/plain" \
+  --data-binary @envelope.bin
+
+curl -s -X POST https://paste.example.com/api/pastes -H "Accept: application/json" \
+  -F "encrypted=1" -F "expire=1d" -F "payload=@envelope.bin"
+```
+
+Password material (`password_salt`, `password_verifier`, `password_iterations`) is accepted in a JSON body, a form, or the query string — the password itself never is, because the verifier is already derived before the request leaves the browser.
+
 `POST /api/pastes` answers `201` with either a bare URL, a single `{url}`, or the full object:
 
 ```json
