@@ -86,7 +86,7 @@ export function upgradeRelativeTimes(root: ParentNode = document): void {
 		if (!Number.isFinite(value)) continue;
 		const before = element.dataset.relativeBefore ?? "Expires";
 		const remaining = value - Date.now();
-		element.textContent = remaining > 0 ? `${before} ${relativeTime(value)}`.replace("in ", "in ") : "Expired";
+		element.textContent = remaining > 0 ? `${before} ${relativeTime(value)}` : "Expired";
 	}
 }
 

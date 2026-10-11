@@ -121,7 +121,9 @@ describe("link mode", () => {
 	it("still expires like everything else", async () => {
 		const created = await createPaste({ url: "https://example.com/expiring", kind: "redirect", expire: "1h" });
 		const row = await readRow(created.id);
-		expect(row?.expires_at).toBeGreaterThan(row!.created_at);
-		expect(row!.expires_at - row!.created_at).toBeLessThanOrEqual(testConfig.maxTtlSeconds * 1000);
+		const expiresAt = Number(row?.expires_at);
+		const createdAt = Number(row?.created_at);
+		expect(expiresAt).toBeGreaterThan(createdAt);
+		expect(expiresAt - createdAt).toBeLessThanOrEqual(testConfig.maxTtlSeconds * 1000);
 	});
 });

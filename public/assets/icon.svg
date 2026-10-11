@@ -1,13 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="PurePaste">
-	<rect width="32" height="32" rx="8" fill="#f8fcf8"/>
-	<circle cx="28" cy="4" r="6.5" fill="#ed7892"/>
+	<style>
+		.bg { fill: #fafaf9; }
+		.bite { fill: #e84d18; }
+		.paper { fill: #ffffff; stroke: #cbcbc5; }
+		.lines { stroke: #52525b; }
+		@media (prefers-color-scheme: dark) {
+			.bg { fill: #101012; }
+			.bite { fill: #ff6a3d; }
+			.paper { fill: #17171a; stroke: #3f3f46; }
+			.lines { stroke: #a1a1aa; }
+		}
+	</style>
+	<rect class="bg" width="32" height="32" rx="8"/>
+	<circle class="bite" cx="28" cy="4" r="6.5"/>
 	<mask id="bite">
 		<rect width="32" height="32" fill="#fff"/>
 		<circle cx="28" cy="4" r="6.6" fill="#000"/>
 	</mask>
 	<g mask="url(#bite)">
-		<rect x="4" y="4" width="24" height="24" rx="7" fill="#ffffff" stroke="#8fb69c" stroke-width="1.6"/>
-		<path d="M9.5 13.5h8M9.5 17.6h10M9.5 21.7h6" stroke="#54aa71" stroke-width="2.1" stroke-linecap="round"/>
+		<rect class="paper" x="4" y="4" width="24" height="24" rx="7" stroke-width="1.6"/>
+		<path class="lines" d="M9.5 13.5h8M9.5 17.6h10M9.5 21.7h6" stroke-width="2.1" stroke-linecap="round" fill="none"/>
 	</g>
-	<circle cx="23" cy="11" r="1.4" fill="#ed7892"/>
+	<circle class="bite" cx="23" cy="11" r="1.4"/>
 </svg>

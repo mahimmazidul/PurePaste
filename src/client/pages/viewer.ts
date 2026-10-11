@@ -13,6 +13,7 @@ export function initViewer(): void {
 	wireCopyButtons();
 	wireRevealForm();
 	wireUnlockForm(pasteId);
+	void highlightInlineCode();
 	void showRemoteCode();
 	void renderMarkdownIfRequested();
 	void initEncryptedView(pasteId);
@@ -85,6 +86,13 @@ function wireRevealForm(): void {
 			if (span) span.textContent = "Opening";
 		}
 	});
+}
+
+/** Server-inlined code gets the same lazy grammar treatment as remote code;
+ *  without this, small pastes rendered straight into the page stayed plain. */
+async function highlightInlineCode(): Promise<void> {
+	const block = qs<HTMLElement>("[data-code][data-language]");
+	if (block) await highlight(block);
 }
 
 /** Large pastes arrive through the raw route rather than inside the markup. */

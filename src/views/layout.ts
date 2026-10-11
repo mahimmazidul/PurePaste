@@ -3,7 +3,7 @@ import type { Config } from "../config";
 
 /**
  * The brand mark: a sheet of paper with a bite taken out of the corner, so the
- * watermelon underneath shows through. No mascot, no gradient.
+ * signal orange underneath shows through. No mascot, no gradient.
  */
 export function brandMark(size = 24): string {
 	const id = "pp-bite";
@@ -107,8 +107,8 @@ export function renderLayout(options: LayoutOptions): string {
 <meta name="description" content="${escapeHtml(description)}">
 ${options.noindex ? '<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">' : '<meta name="robots" content="noindex, nofollow">'}
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#f8fcf8" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#101713" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fafaf9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101012" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/assets/fonts/fonts.css">
 <link rel="stylesheet" href="/assets/styles/app.css">

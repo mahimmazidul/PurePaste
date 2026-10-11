@@ -51,6 +51,15 @@ export function formatDate(epochMs: number): string {
 	return new Date(epochMs).toISOString().slice(0, 10);
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+
+/** Compact UTC display form for metadata rows: "11 Oct 2026, 21:29 UTC". */
+export function formatDisplayDateTime(epochMs: number): string {
+	const d = new Date(epochMs);
+	const pad = (n: number): string => String(n).padStart(2, "0");
+	return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
+}
+
 /** Absolute, human readable expiry line. The client upgrades this to "in 3 hours". */
 export function formatExpiry(expiresAt: number, now: number): string {
 	const remaining = Math.round((expiresAt - now) / 1000);

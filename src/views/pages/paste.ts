@@ -1,5 +1,5 @@
 import type { Config } from "../../config";
-import { escapeHtml, formatBytes, formatDateTime, formatExpiry } from "../../lib/format";
+import { escapeHtml, formatBytes, formatDateTime, formatDisplayDateTime, formatExpiry } from "../../lib/format";
 import { languageLabel } from "../../lib/languages";
 import { button, icon, icons, metaRow, notice, renderLayout } from "../layout";
 import type { PasteRecord } from "../../types";
@@ -86,11 +86,11 @@ function metaFor(record: PasteRecord, config: Config, now: number): string {
 	}
 	items.push({
 		label: "Created",
-		value: `<time datetime="${escapeHtml(formatDateTime(record.createdAt))}" data-relative="${record.createdAt}">${escapeHtml(formatDateTime(record.createdAt).replace("T", " ").replace("Z", " UTC"))}</time>`,
+		value: `<time datetime="${escapeHtml(formatDateTime(record.createdAt))}" data-relative="${record.createdAt}">${escapeHtml(formatDisplayDateTime(record.createdAt))}</time>`,
 	});
 	items.push({
 		label: "Expires",
-		value: `<time datetime="${escapeHtml(formatDateTime(record.expiresAt))}" data-relative-expiry="${record.expiresAt}" data-relative-before="Expires in">${escapeHtml(formatExpiry(record.expiresAt, now))}</time>`,
+		value: `<time datetime="${escapeHtml(formatDateTime(record.expiresAt))}" data-relative-expiry="${record.expiresAt}" data-relative-before="Expires">${escapeHtml(formatExpiry(record.expiresAt, now))}</time>`,
 	});
 	if (config.viewCounting) {
 		items.push({
