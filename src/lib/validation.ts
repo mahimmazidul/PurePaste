@@ -2,6 +2,7 @@ import { fail } from "./errors";
 import { checkSlug, decodeBase64Url, isSafeId, normalizeSlug } from "./ids";
 import { PASSWORD_ALGO, decodeVerifier } from "./crypto";
 import { resolveLanguage } from "./languages";
+import { TTL_EXTRA_CHOICES } from "../config";
 import type { Config } from "../config";
 import type { CreatePasteInput, PasswordMaterial } from "../types";
 
@@ -87,8 +88,12 @@ export function parseExpiration(raw: unknown, config: Config): number {
 	const alias = aliases[value];
 	if (alias) value = alias;
 
-	const choice = config.ttlChoices.find((option) => option.value === value);
-	if (choice) return choice.seconds;
+	const choice =
+		config.ttlChoices.find((option) => option.value === value) ??
+		TTL_EXTRA_CHOICES.find((option) => option.value === value);
+	// A lifetime nobody offered is still refused: the extra choices exist so the
+	// file tab's shorter default round-trips, not as an open-ended grammar.
+	if (choice) return Math.min(choice.seconds, config.maxTtlSeconds);
 
 	// Bare seconds are accepted from the API, but the ceiling is the server's, not the client's.
 	if (/^\d+$/.test(value)) {

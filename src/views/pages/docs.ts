@@ -68,7 +68,7 @@ export function renderApiDocs(options: ApiDocsOptions): string {
 			["Opaque bytes", code("application/octet-stream"), `With ${code("?encrypted=1")} the bytes are stored untouched, or as the ${code("payload")} part of a form.`],
 		],
 	)}
-	<p class="field-note">Options, in the JSON body, form fields or query string: ${code("title")}, ${code("language")}, ${code("expire")} (or ${code("ttl")}), ${code("slug")}, ${code("burn")}, ${code("markdown")}, ${code("password_salt")}, ${code("password_verifier")}, ${code("password_iterations")}. Expiry accepts ${config.ttlChoices.map((choice) => code(choice.value)).join(", ")}, the aliases ${code("1w")} and ${code("1mo")}, or bare seconds — clamped to ${code(`${config.maxTtlSeconds}`)}.</p>
+	<p class="field-note">Options, in the JSON body, form fields or query string: ${code("title")}, ${code("language")}, ${code("expire")} (or ${code("ttl")}), ${code("slug")}, ${code("burn")}, ${code("markdown")}, ${code("password_salt")}, ${code("password_verifier")}, ${code("password_iterations")}. Expiry accepts ${config.ttlChoices.map((choice) => code(choice.value)).join(", ")}, the aliases ${code("1w")}, ${code("1mo")} and ${code("3d")} (the file tab's shorter default), or bare seconds — clamped to ${code(`${config.maxTtlSeconds}`)}. Text defaults to ${code(`${config.defaultTtlSeconds}`)} (one week); uploads are meant to sit for three days.</p>
 	${snippet(
 		`# A bare URL back — the friendliest thing for a shell script\necho "hello from a pipe" | curl -s -X POST --data-binary @- \\\n  -H "Content-Type: text/plain" -H "Accept: text/plain" \\\n  ${origin}/api/pastes`,
 		"text from a pipe",

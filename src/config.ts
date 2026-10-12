@@ -20,6 +20,20 @@ export const TTL_CHOICES = [
 
 export type TtlChoice = (typeof TTL_CHOICES)[number]["value"];
 
+/**
+ * Files live in KV, the one budget on a free account with real pressure
+ * (1 GB across the namespace), so the file tab defaults shorter than text.
+ * It is deliberately *not* in TTL_CHOICES: slips and links keep the menu they
+ * have always had. The parser accepts it anyway, so the file tab's own option
+ * round-trips through the same validation as everything else.
+ */
+export const FILE_TTL_SECONDS = 3 * 24 * 60 * 60;
+export const FILE_TTL_VALUE = "3d";
+const FILE_TTL_ALIASES = ["3d", "3day", "3days"];
+
+/** Extra lifetimes the parser accepts but no dropdown offers by default. */
+export const TTL_EXTRA_CHOICES = FILE_TTL_ALIASES.map((value) => ({ value, seconds: FILE_TTL_SECONDS }));
+
 export interface Config {
 	maxTtlSeconds: number;
 	defaultTtlSeconds: number;

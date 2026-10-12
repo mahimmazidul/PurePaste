@@ -22,6 +22,7 @@ export function renderAboutPage(config: Config): string {
 			<li>You get a management key once, at creation, to delete or check on the paste. It is shown once because we only keep a fingerprint of it.</li>
 			<li>No analytics, no advertising, no tracking pixels, no third-party requests from the pages themselves.</li>
 			<li>The only cookie is a short-lived one that a password-protected paste sets after you unlock it.</li>
+			<li>An unfinished sheet — the text you were typing when the page reloaded — is kept by your browser, not by us, and the Discard button beside it throws that copy away.</li>
 		</ul>
 	</section>
 
@@ -29,9 +30,10 @@ export function renderAboutPage(config: Config): string {
 		<h2 class="h2">Where things are stored</h2>
 		<p>Metadata — sizes, expiry, a fingerprint of the delete key — lives in Cloudflare D1. Content lives in D1 only when it is a small, unencrypted slip (under ${escapeHtml(inlineLimit)}). Everything else, including every file and anything encrypted, goes to object storage (Cloudflare KV on this deployment).</p>
 		<p>Object names are derived from the paste id, never from a file name, and files always download rather than open in a browser.</p>
+		<p>That object store is one shared bucket with a modest free allowance, so files get the shortest default lifetime here: three days, against a week for text. Expiries are what keep the shelf clear without anyone having to police it.</p>
 		<dl class="spec-list">
 			<div><dt>Text pastes</dt><dd>up to ${escapeHtml(textLimit)}</dd></div>
-			<div><dt>Files</dt><dd>up to ${escapeHtml(fileLimit)}</dd></div>
+			<div><dt>Files</dt><dd>up to ${escapeHtml(fileLimit)}, three days by default</dd></div>
 			<div><dt>Longest lifetime</dt><dd>${String(maxDays)} days, enforced by the server</dd></div>
 			<div><dt>Cleanup</dt><dd>hourly, plus an expiry check on every request</dd></div>
 		</dl>
@@ -67,7 +69,7 @@ export function renderAboutPage(config: Config): string {
   -H "Accept: text/plain" -H "Content-Type: text/plain" \\
   "/api/pastes?expire=1d"</code></pre>
 		<p class="lede">Upload a file, delete a paste, fetch the raw text:</p>
-		<pre class="code-block mono"><code>curl -s -X POST -F "file=@photo.png" -F "expire=7d" \\
+		<pre class="code-block mono"><code>curl -s -X POST -F "file=@photo.png" -F "expire=3d" \\
   -H "Accept: application/json" /api/pastes
 
 curl -s -X DELETE -H "Authorization: Bearer &lt;manage-token&gt;" \\

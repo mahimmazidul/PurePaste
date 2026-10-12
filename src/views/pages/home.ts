@@ -1,3 +1,4 @@
+import { FILE_TTL_SECONDS, FILE_TTL_VALUE } from "../../config";
 import type { Config } from "../../config";
 import { escapeHtml, formatBytes } from "../../lib/format";
 import { LANGUAGES } from "../../lib/languages";
@@ -47,16 +48,33 @@ export interface HomeOptions {
 const TTL_LABELS: Record<string, string> = {
 	"1h": "1 hour",
 	"1d": "1 day",
+	"3d": "3 days",
 	"7d": "1 week",
 	"14d": "2 weeks",
 	"30d": "30 days",
 };
 
-function expirationOptions(config: Config, selected: string): string {
-	const defaultSeconds = config.defaultTtlSeconds;
-	const fallback =
-		config.ttlChoices.find((choice) => choice.seconds === defaultSeconds)?.value ?? config.ttlChoices[0]?.value;
-	return config.ttlChoices
+/**
+ * Files sit in KV, the one budget on this instance with real pressure (1 GB of
+ * storage on the free tier), so the file tab offers a shorter default than text.
+ * `3d` is not in the shared menu on purpose — slips and links keep their week —
+ * and the parser accepts it so the choice round-trips like any other.
+ */
+function ttlChoicesWithFiles(config: Config): Array<{ value: string; seconds: number }> {
+	const choices = config.ttlChoices.map((choice) => ({ value: choice.value as string, seconds: choice.seconds }));
+	if (!choices.some((choice) => choice.seconds === FILE_TTL_SECONDS)) {
+		choices.push({ value: FILE_TTL_VALUE, seconds: FILE_TTL_SECONDS });
+	}
+	return choices.sort((a, b) => a.seconds - b.seconds);
+}
+
+function expirationOptions(config: Config, selected: string, fileMode = false): string {
+	const choices = fileMode
+		? ttlChoicesWithFiles(config)
+		: config.ttlChoices.map((choice) => ({ value: choice.value as string, seconds: choice.seconds }));
+	const defaultSeconds = fileMode ? Math.min(FILE_TTL_SECONDS, config.maxTtlSeconds) : config.defaultTtlSeconds;
+	const fallback = choices.find((choice) => choice.seconds === defaultSeconds)?.value ?? choices[0]?.value;
+	return choices
 		.map((choice) => {
 			const value = choice.value;
 			const isSelected = selected ? selected === value : value === fallback;
@@ -84,7 +102,14 @@ function selectField(id: string, name: string, label: string, options: string): 
 	</label>`;
 }
 
-function toggle(id: string, name: string, label: string, hint: string | null, checked: boolean, iconName?: keyof typeof icons): string {
+function toggle(
+	id: string,
+	name: string,
+	label: string,
+	hint: string | null,
+	checked: boolean,
+	iconName?: keyof typeof icons,
+): string {
 	return `<label class="toggle" for="${escapeHtml(id)}">
 		<input type="checkbox" id="${escapeHtml(id)}" name="${escapeHtml(name)}" value="1"${checked ? " checked" : ""}>
 		<span class="toggle-box" aria-hidden="true">${icons.check}</span>
@@ -192,20 +217,28 @@ export function renderHome(options: HomeOptions): string {
 	const fileForm = `
 	<form method="post" action="/" enctype="multipart/form-data" class="composer-panel panel-file" data-create-form data-mode="file">
 		<div class="panel-head">
-			<div class="dropzone" data-dropzone>
-				<span class="dropzone-icon">${icons.upload}</span>
-				<div class="dropzone-text">
-					<label class="dropzone-label" for="file">Drop a file here, or choose one</label>
-					<p class="field-note">Up to ${escapeHtml(fileLimit)}. Files always download rather than open in the browser.</p>
+			<div class="file-block" data-file-block>
+				<div class="dropzone" data-dropzone>
+					<span class="dropzone-icon" aria-hidden="true">${icons.upload}</span>
+					<div class="dropzone-text">
+						<label class="dropzone-label" for="file">Drop a file here, or choose one</label>
+						<p class="field-note">Up to ${escapeHtml(fileLimit)}, then it fades in ${escapeHtml(TTL_LABELS[FILE_TTL_VALUE] ?? "3 days")}. Files always download rather than open in the browser.</p>
+					</div>
+					<input class="file-input" type="file" id="file" name="file" data-file-input>
 				</div>
-				<input class="file-input" type="file" id="file" name="file" data-file-input>
-				<p class="dropzone-selected mono" data-file-name hidden></p>
+				<div class="file-bar" data-file-bar hidden>
+					<p class="file-picked mono" data-file-name></p>
+					<span class="file-bar-actions">
+						<button type="button" class="btn btn-quiet btn-small" data-file-preview>${icons.eye}<span>Preview</span></button>
+						<button type="button" class="btn btn-quiet btn-small" data-file-clear>${icons.close}<span>Remove</span></button>
+					</span>
+				</div>
 			</div>
 			<input class="title-input" type="text" id="title-file" name="title" maxlength="200" placeholder="A name for the file, if you like" aria-label="Title (optional)">
 		</div>
 		<div class="panel-options hairline-t">
 			<div class="options-row">
-				${selectField("expire-file", "expire", "Lives for", expirationOptions(config, ""))}
+				${selectField("expire-file", "expire", "Lives for", expirationOptions(config, values.expire, true))}
 				${toggle("burn-file", "burn", "Burn after one download", null, false, "flame")}
 				<button type="button" class="more-toggle" data-more-toggle aria-expanded="false">${icons.plus}<span>More options</span></button>
 			</div>
@@ -218,6 +251,14 @@ export function renderHome(options: HomeOptions): string {
 		</div>
 		${turnstile}
 		${composerFooter("", "Seal this file", "check")}
+		<dialog class="dialog dialog-preview" data-file-dialog>
+			<div class="dialog-head">
+				<p class="dialog-title" data-file-dialog-title>Preview</p>
+				<button type="button" class="btn btn-quiet btn-small" data-file-dialog-close>${icons.close}<span>Close</span></button>
+			</div>
+			<div class="preview-body" data-file-preview-body></div>
+			<p class="field-note">This is your own copy of the file, read in the browser. Nothing is sealed until you press the button below.</p>
+		</dialog>
 	</form>`;
 
 	const body = `
@@ -228,6 +269,14 @@ export function renderHome(options: HomeOptions): string {
 	</section>
 
 	${options.flash ? notice({ tone: options.flash.tone, body: options.flash.body }) : ""}
+
+	<div class="notice notice-info draft-notice" data-draft-notice hidden>
+		<p class="notice-title">We kept your unfinished sheet</p>
+		<div class="notice-body">
+			<span data-draft-notice-text>This browser had something in progress, so it's back.</span>
+			<button type="button" class="btn btn-quiet btn-small" data-draft-clear>${icons.trash}<span>Discard it</span></button>
+		</div>
+	</div>
 	${options.forkOf ? notice({ tone: "info", body: `Forking <span class="mono">${escapeHtml(options.forkOf)}</span>. The original stays where it is until you delete it.` }) : ""}
 	${errorSummary(options.errors ?? [])}
 
@@ -280,7 +329,7 @@ export function renderHome(options: HomeOptions): string {
 	<noscript>
 		<div class="notice notice-info">
 			<p class="notice-title">JavaScript is off</p>
-			<div class="notice-body">Slips, links and files all work fine without it. Passwords and in-browser encryption need JavaScript, so those options stay hidden.</div>
+			<div class="notice-body">Slips, links and files all work fine without it. Passwords and in-browser encryption need JavaScript, so those options stay hidden — as do the file preview and keeping an unfinished sheet across a reload.</div>
 		</div>
 	</noscript>
 `;

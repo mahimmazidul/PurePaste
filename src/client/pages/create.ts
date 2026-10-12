@@ -1,4 +1,6 @@
 import { newEncryptionKey, passwordFieldData } from "../lib/crypto";
+import { applyDraft, queueDraftSave, wireDraftNotice } from "../lib/draft-ui";
+import { clearDraft } from "../lib/drafts";
 import { announce, formatBytes, qs, qsa } from "../lib/dom";
 import { saveLocalItem } from "../lib/local-items";
 
@@ -15,7 +17,10 @@ export function initCreatePage(): void {
 	const forms = qsa<HTMLFormElement>("[data-create-form]");
 	for (const form of forms) wireForm(form);
 	wireTabs();
-	void prefillFork();
+	wireDraftNotice();
+	// A restored draft beats a ?fork= prefill: what you were writing is worth
+	// more than the slip you meant to copy.
+	if (!applyDraft()) void prefillFork();
 }
 
 const CAPTIONS: Record<string, string> = {
@@ -31,7 +36,12 @@ function wireTabs(): void {
 		const active = radios.find((radio) => radio.checked);
 		if (caption && active) caption.textContent = CAPTIONS[active.dataset.modeRadio ?? ""] ?? "";
 	};
-	for (const radio of radios) radio.addEventListener("change", sync);
+	for (const radio of radios) {
+		radio.addEventListener("change", () => {
+			sync();
+			queueDraftSave();
+		});
+	}
 	sync();
 
 	// More-options disclosure, per panel.
@@ -76,7 +86,10 @@ function updateCount(editor: HTMLTextAreaElement): void {
 	const counter = form ? qs<HTMLElement>("[data-composer-count]", form) : null;
 	if (!counter) return;
 	const chars = editor.value.length;
-	counter.textContent = chars > 0 ? `${chars.toLocaleString("en-US")} characters · ${formatBytes(new TextEncoder().encode(editor.value).byteLength)}` : "";
+	counter.textContent =
+		chars > 0
+			? `${chars.toLocaleString("en-US")} characters · ${formatBytes(new TextEncoder().encode(editor.value).byteLength)}`
+			: "";
 }
 
 function wireForm(form: HTMLFormElement): void {
@@ -86,8 +99,14 @@ function wireForm(form: HTMLFormElement): void {
 	const passwordInput = qs<HTMLInputElement>("[data-password-input]", form);
 	const encryptToggle = qs<HTMLInputElement>("[data-encrypt-input]", form);
 	const fileInput = qs<HTMLInputElement>("[data-file-input]", form);
-	const fileNameLabel = qs("[data-file-name]", form);
-	const dropzone = qs("[data-dropzone]", form);
+	const fileNameLabel = qs<HTMLElement>("[data-file-name]", form);
+	const fileBar = qs<HTMLElement>("[data-file-bar]", form);
+	const previewButton = qs<HTMLButtonElement>("[data-file-preview]", form);
+	const clearButton = qs<HTMLButtonElement>("[data-file-clear]", form);
+	const dialog = qs<HTMLDialogElement>("[data-file-dialog]", form);
+	// Either handle: the hook attribute, or the class, so a markup rename cannot
+	// quietly turn file selection (and drag and drop) off.
+	const dropzone = qs<HTMLElement>("[data-dropzone]", form) ?? qs<HTMLElement>(".dropzone", form);
 	const iterationsField = qs<HTMLInputElement>("[data-password-iterations]", form);
 	const expireSelect = qs<HTMLSelectElement>('select[name="expire"]', form);
 	const counter = qs<HTMLElement>("[data-composer-count]", form);
@@ -113,6 +132,10 @@ function wireForm(form: HTMLFormElement): void {
 		sync();
 	}
 
+	// Mirrored into this browser as you type, so a refresh stops eating the sheet.
+	form.addEventListener("input", queueDraftSave);
+	form.addEventListener("change", queueDraftSave);
+
 	// Ctrl/Cmd + Enter seals from anywhere in the form.
 	form.addEventListener("keydown", (event) => {
 		if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
@@ -122,16 +145,32 @@ function wireForm(form: HTMLFormElement): void {
 	});
 
 	if (dropzone && fileInput) {
+		const pickerLabel = qs<HTMLElement>(".dropzone-label", dropzone);
 		const showFile = () => {
 			const file = fileInput.files?.[0];
-			if (fileNameLabel) {
-				fileNameLabel.hidden = !file;
-				fileNameLabel.textContent = file ? `${file.name} · ${formatBytes(file.size)}` : "";
-			}
+			if (fileNameLabel) fileNameLabel.textContent = file ? `${file.name} · ${formatBytes(file.size)}` : "";
+			if (fileBar) fileBar.hidden = !file;
 			dropzone.classList.toggle("has-file", Boolean(file));
+			if (pickerLabel) {
+				pickerLabel.textContent = file ? "Chosen — pick another to replace it" : "Drop a file here, or choose one";
+			}
+			if (previewButton) previewButton.disabled = !file;
 		};
 
-		fileInput.addEventListener("change", showFile);
+		if (previewButton && dialog) wirePreview(fileInput, previewButton, dialog);
+		if (clearButton) {
+			clearButton.addEventListener("click", () => {
+				fileInput.value = "";
+				showFile();
+				queueDraftSave();
+				announce("File set aside before sealing", "info");
+			});
+		}
+
+		fileInput.addEventListener("change", () => {
+			showFile();
+			queueDraftSave();
+		});
 		for (const type of ["dragenter", "dragover"]) {
 			dropzone.addEventListener(type, (event) => {
 				event.preventDefault();
@@ -194,11 +233,14 @@ function wireForm(form: HTMLFormElement): void {
 				editor?.focus();
 				return;
 			}
-			if (mode === "file" && !(fileInput?.files?.[0])) {
+			if (mode === "file" && !fileInput?.files?.[0]) {
 				event.preventDefault();
 				showError("Choose a file first.");
 				return;
 			}
+			// The sheet is on its way to the server: drop the local copy so it
+			// doesn't greet the next visit as an unfinished draft.
+			clearDraft();
 			setBusy(true);
 			return;
 		}
@@ -319,6 +361,148 @@ async function submitEncrypted(form: HTMLFormElement): Promise<void> {
 		key,
 	});
 
+	clearDraft();
 	announce("Encrypted and sealed", "success");
 	location.assign(`/p/${created.id}#k=${key}`);
+}
+
+/* ---------------------------------------------------------------- preview */
+
+const PREVIEW_IMAGE_BYTES = 8 * 1024 * 1024;
+const PREVIEW_TEXT_BYTES = 192 * 1024;
+
+/**
+ * The page's own Content-Security-Policy is `img-src 'self' data:` and
+ * `object-src 'none'`, and that policy is the point of the product — so a
+ * preview is drawn from a data: URL (base64, ~4/3 of the file, in this tab
+ * only) or not at all. No blob: URLs, no <object>, no loosening of the header.
+ */
+function readAsDataURL(file: File): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () => resolve(String(reader.result ?? ""));
+		reader.onerror = () => reject(reader.error ?? new Error("read_failed"));
+		reader.readAsDataURL(file);
+	});
+}
+
+type Preview = { kind: "text" | "image" | "none"; label: string };
+
+function previewKindFor(file: File): Preview {
+	const name = file.name.toLowerCase();
+	const type = file.type.toLowerCase();
+	if (type.startsWith("image/") || /\.(png|jpe?g|gif|webp|avif|bmp|svgz?)$/.test(name)) {
+		return { kind: "image", label: "image" };
+	}
+	if (type.startsWith("text/") || type === "application/json" || type.endsWith("+json") || type.endsWith("+xml")) {
+		return { kind: "text", label: type || "text" };
+	}
+	if (
+		/\.(txt|md|markdown|csv|tsv|log|json|jsonl|ya?ml|toml|ini|cfg|conf|env|lock|xml|html?|css|scss|sql|sh|bash|zsh|fish|ps1|py|js|mjs|cjs|ts|tsx|jsx|go|rs|c|h|cpp|hpp|java|kt|rb|php|pl|lua|ex|exs|erl|hs|ml|swift|dart|vue|svelte|astro)$/.test(
+			name,
+		)
+	) {
+		return { kind: "text", label: type || "text" };
+	}
+	return { kind: "none", label: type ? `.${type}` : "binary" };
+}
+
+function openPreview(dialog: HTMLDialogElement): void {
+	if (typeof dialog.showModal === "function") dialog.showModal();
+	else dialog.setAttribute("open", "");
+}
+
+function closePreview(dialog: HTMLDialogElement): void {
+	if (typeof dialog.close === "function") dialog.close();
+	else dialog.removeAttribute("open");
+}
+
+function say(body: HTMLElement, message: string): void {
+	body.className = "preview-body";
+	body.textContent = message;
+}
+
+function renderPreview(body: HTMLElement, file: File, preview: Preview): void {
+	body.textContent = "Reading…";
+	body.className = "preview-body is-loading";
+
+	if (preview.kind === "image" && file.size <= PREVIEW_IMAGE_BYTES) {
+		readAsDataURL(file)
+			.then((dataUrl) => {
+				const image = new Image();
+				image.alt = file.name;
+				image.addEventListener(
+					"error",
+					() => say(body, "This browser couldn't draw that image. The file still seals and downloads as-is."),
+					{ once: true },
+				);
+				image.src = dataUrl;
+				body.className = "preview-body preview-image-wrap";
+				body.replaceChildren(image);
+			})
+			.catch(() => say(body, "The file couldn't be read off disk. Try choosing it again."));
+		return;
+	}
+
+	if (preview.kind === "text") {
+		file
+			.slice(0, PREVIEW_TEXT_BYTES)
+			.text()
+			.then((chunk) => {
+				const clipped = file.size > PREVIEW_TEXT_BYTES;
+				// eslint-disable-next-line no-control-regex -- sniffing for binary payloads is the purpose
+				if (/[\u0000-\u0008\u000e-\u001f]/.test(chunk.slice(0, 8192))) {
+					body.className = "preview-body";
+					body.textContent =
+						"That looks binary rather than textual, so there's nothing honest to show. It will still seal and download fine.";
+					return;
+				}
+				const pre = document.createElement("pre");
+				pre.className = "preview-text mono";
+				pre.textContent = chunk;
+				body.className = "preview-body";
+				body.replaceChildren(pre);
+				if (clipped) {
+					const note = document.createElement("p");
+					note.className = "preview-note";
+					note.textContent = `First ${Math.round(PREVIEW_TEXT_BYTES / 1024)} KiB of ${file.name} — the whole thing still seals.`;
+					body.append(note);
+				}
+			})
+			.catch(() => say(body, "The file couldn't be read off disk. Try choosing it again."));
+		return;
+	}
+
+	body.className = "preview-body";
+	const reason =
+		preview.kind === "image"
+			? `Images over ${Math.round(PREVIEW_IMAGE_BYTES / 1024 / 1024)} MiB aren't drawn in this tab`
+			: "This type has no preview that wouldn't be a lie";
+	body.textContent = `${reason}. Nothing is wrong with the file — it seals and downloads exactly as it is (${preview.label}, ${formatBytes(file.size)}).`;
+}
+
+function wirePreview(fileInput: HTMLInputElement, button: HTMLButtonElement, dialog: HTMLDialogElement): void {
+	const title = qs<HTMLElement>("[data-file-dialog-title]", dialog);
+	const body = qs<HTMLElement>("[data-file-preview-body]", dialog);
+	if (!body) return;
+
+	button.addEventListener("click", () => {
+		const file = fileInput.files?.[0];
+		if (!file) {
+			announce("Choose a file to look at first", "info");
+			return;
+		}
+		if (title) title.textContent = `Preview — ${file.name} · ${formatBytes(file.size)}`;
+		renderPreview(body, file, previewKindFor(file));
+		openPreview(dialog);
+	});
+
+	for (const close of qsa<HTMLElement>("[data-file-dialog-close]", dialog)) {
+		close.addEventListener("click", () => closePreview(dialog));
+	}
+	dialog.addEventListener("click", (event) => {
+		if (event.target === dialog) closePreview(dialog);
+	});
+	// Nothing to release: a data: URL is just a string.
+	dialog.addEventListener("close", () => body.replaceChildren());
 }

@@ -44,7 +44,7 @@ export const fail = {
 			"invalid_expiration",
 			400,
 			"That expiration isn't one of the options.",
-			"Choose 1h, 1d, 7d, 14d or 30d.",
+			"Choose 1h, 1d, 3d, 7d, 14d or 30d — or bare seconds.",
 		),
 	invalidSlug: (message = "That custom name can't be used.") => new AppError("invalid_slug", 400, message),
 	slugTaken: () => new AppError("slug_taken", 409, "That custom name is already taken."),
