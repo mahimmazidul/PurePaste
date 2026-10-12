@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { deferrer } from "../lib/ctx";
 import type { AppBindings } from "../env";
 import { fail } from "../lib/errors";
 import { assembleRedirectInput, parseId } from "../lib/validation";
@@ -84,7 +85,7 @@ export async function goLink(c: Context<AppBindings>): Promise<Response> {
 	let url = record.redirectUrl;
 	if (record.burnAfterRead) {
 		// One atomic claim: two simultaneous visitors cannot both be let through.
-		const claimed = await claimBurn(c.env, id, now);
+		const claimed = await claimBurn(c.env, id, now, deferrer(c));
 		if (!claimed || !claimed.redirectUrl) {
 			return c.html(renderGonePage({ config: c.get("config"), reason: "burned", kind: "link" }), 410);
 		}
@@ -115,7 +116,7 @@ export async function createLink(c: Context<AppBindings>): Promise<Response> {
 		config,
 	);
 
-	const created = await createPaste(c.env, config, input);
+	const created = await createPaste(c.env, config, input, { ctx: deferrer(c) });
 	const origin = new URL(c.req.url).origin;
 	const id = created.record.id;
 
@@ -148,7 +149,7 @@ export async function revealLink(c: Context<AppBindings>): Promise<Response> {
 	if (record.kind !== "redirect" || !record.redirectUrl) throw fail.notFound();
 
 	if (record.burnAfterRead) {
-		const claimed = await claimBurn(c.env, id, now);
+		const claimed = await claimBurn(c.env, id, now, deferrer(c));
 		if (!claimed || !claimed.redirectUrl) throw fail.consumed();
 		return c.json({ link: asLinkPayload({ ...claimed, views: claimed.views + 1 }) });
 	}

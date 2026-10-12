@@ -13,6 +13,7 @@ import { deleteManagedPaste, getMetadata, unlockPaste } from "./routes/manage";
 import { createLink, getLinkPage, goLink, revealLink } from "./routes/links";
 import { stores } from "./services/paste-store";
 import { resolveStorage } from "./services/storage-provider";
+import { supabaseReport } from "./services/supabase-store";
 import { renderApiDocs } from "./views/pages/docs";
 import { renderAboutPage } from "./views/pages/about";
 import { renderErrorPage } from "./views/pages/error";
@@ -129,6 +130,7 @@ export function createApp(): Hono<AppBindings> {
 				turnstile: config.turnstileEnabled,
 			},
 			storage: storageReport(c.env, config),
+			supabase: supabaseReport(c.env),
 		});
 	});
 
@@ -262,6 +264,7 @@ function storageReport(env: AppEnv, config: Config) {
 		return {
 			provider: resolved.provider,
 			reason: resolved.reason,
+			fallback: resolved.fallback ?? null,
 			direct_links: Boolean(config.storageDirectOrigin),
 		};
 	} catch (error) {

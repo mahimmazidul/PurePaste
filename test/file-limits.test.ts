@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { formatBytes } from "../src/lib/format";
 import { createPaste, readJson, readRow, request, resetStorage, testConfig } from "./helpers";
 
 /**
  * Two things live here that the shared expiry menu doesn't cover:
  *
- *  - the file tab's shorter default (3 days, because KV is the budget with real
- *    pressure on a free account) without touching slips or links;
+ *  - the file tab's shorter default (3 days, because bytes are the budget on any of
+ *    the providers) without touching slips or links;
  *  - the file panel's markup contract — a chosen file gets its own row with
  *    preview and remove buttons, and the composer keeps a draft banner.
  */
@@ -130,7 +131,10 @@ describe("file expiry and file panel", () => {
 
 	it("promises the shorter lifetime in the file note", async () => {
 		const html = await home();
-		expect(html).toMatch(/Up to 25 MiB, then it fades in 3 days/);
+		// Derived, not hardcoded: the note has to follow FILE_MAX_BYTES wherever it is
+		// raised to, and the whole point of the line is that it is not a promise the
+		// view can make on its own.
+		expect(html).toContain(`Up to ${formatBytes(testConfig.fileMaxBytes)}, then it fades in 3 days`);
 	});
 
 	it("renders the draft banner the client fills in", async () => {

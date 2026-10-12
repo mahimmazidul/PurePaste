@@ -40,6 +40,11 @@ export interface S3Settings {
 	 * Required by Supabase Storage's S3-compatible API, which rejects path style.
 	 */
 	virtualHostStyle?: boolean;
+	/**
+	 * Delete hidden/previous versions too. On by default: a versioned bucket that
+	 * only ever gets plain DELETEs never gives its storage back.
+	 */
+	purgeVersions?: boolean;
 }
 
 const EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
@@ -174,13 +179,63 @@ async function signV4(input: SignInput): Promise<SignResult> {
 /** Exported for the unit test that pins the canonical forms against an independent implementation. */
 export const testing = { signV4, uriEncode, amzStamps, emptySha256: EMPTY_SHA256 };
 
+function decodeXml(value: string): string {
+	return value
+		.replace(/&lt;/g, "<")
+		.replace(/&gt;/g, ">")
+		.replace(/&quot;/g, '"')
+		.replace(/&apos;/g, "'")
+		.replace(/&#(\d+);/g, (_m, digits: string) => String.fromCharCode(Number(digits)))
+		.replace(/&amp;/g, "&");
+}
+
+function singleTag(xml: string, tag: string): string | null {
+	const match = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`).exec(xml);
+	return match?.[1] === undefined ? null : decodeXml(match[1]);
+}
+
+/** Every `<Key>` + `<LastModified>` pair from a ListObjectsV2 body. */
+export function listingsOf(xml: string): Array<{ key: string; lastModified: number }> {
+	const out: Array<{ key: string; lastModified: number }> = [];
+	for (const block of xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)) {
+		const body = block[1] ?? "";
+		const key = singleTag(body, "Key");
+		if (!key) continue;
+		const stamp = singleTag(body, "LastModified");
+		const parsed = stamp ? Date.parse(stamp) : Number.NaN;
+		out.push({ key, lastModified: Number.isNaN(parsed) ? 0 : parsed });
+	}
+	return out;
+}
+
+/** Version ids for one exact key, from a ListObjectVersions body. */
+export function versionsOf(xml: string, key: string): string[] {
+	const ids: string[] = [];
+	for (const block of xml.matchAll(/<(Version|DeleteMarker)>([\s\S]*?)<\/(Version|DeleteMarker)>/g)) {
+		const body = block[2] ?? "";
+		if (singleTag(body, "Key") !== key) continue;
+		const versionId = singleTag(body, "VersionId");
+		// `null` is the id S3 gives the current object in an unversioned bucket:
+		// deleting "null" deletes the object, which is what we want anyway.
+		if (versionId) ids.push(versionId);
+	}
+	return ids;
+}
+
 export class S3ObjectStore implements BlobStore {
 	readonly kind = "s3" as const;
 
 	constructor(
 		private readonly settings: S3Settings,
 		private readonly prefix = settings.prefix ?? "pp/v1",
+		/** The transport, injectable so the wire format can be tested without a network. */
+		private readonly fetchImpl: typeof fetch = (input, init) => fetch(input, init),
 	) {}
+
+	/** Common prefix of every key this store owns; the orphan sweep lists under it. */
+	objectPrefix(): string {
+		return `${this.prefix}/`;
+	}
 
 	keyFor(id: string, kind: ObjectKind): string {
 		return `${this.prefix}/${kind}/${id}`;
@@ -209,14 +264,40 @@ export class S3ObjectStore implements BlobStore {
 	private async request(
 		key: string,
 		method: string,
-		options: { body?: BodyInit | null; headers?: Record<string, string>; payloadHash?: string } = {},
+		options: {
+			body?: BodyInit | null;
+			headers?: Record<string, string>;
+			payloadHash?: string;
+			query?: [string, string][];
+		} = {},
 	): Promise<Response> {
 		const { url, path } = this.urlFor(key);
+		return this.send(url, path, method, options);
+	}
+
+	/** Bucket-level call: the path is the bucket root and the query does the work. */
+	private async requestBucket(method: string, query: [string, string][]): Promise<Response> {
+		const { url, path } = this.urlFor("");
+		return this.send(url, path, method, { query });
+	}
+
+	private async send(
+		url: URL,
+		path: string,
+		method: string,
+		options: {
+			body?: BodyInit | null;
+			headers?: Record<string, string>;
+			payloadHash?: string;
+			query?: [string, string][];
+		},
+	): Promise<Response> {
+		const query = options.query ?? [];
 		const payloadHash = options.payloadHash ?? (options.body ? "UNSIGNED-PAYLOAD" : EMPTY_SHA256);
 		const signed = await signV4({
 			method,
 			path,
-			query: [],
+			query,
 			headers: { "x-amz-content-sha256": payloadHash, ...(options.headers ?? {}) },
 			payloadHash,
 			region: this.settings.region,
@@ -225,7 +306,12 @@ export class S3ObjectStore implements BlobStore {
 			secretAccessKey: this.settings.secretAccessKey,
 			host: url.host,
 		});
-		return fetch(url, {
+		// The signed query is appended rather than rebuilt: whatever bytes went into
+		// the signature are the bytes that must go on the wire.
+		const target = new URL(url.toString());
+		target.search = "";
+		for (const [name, value] of query) target.searchParams.append(name, value);
+		return this.fetchImpl(target, {
 			method,
 			headers: signed.headers,
 			body: options.body,
@@ -287,16 +373,67 @@ export class S3ObjectStore implements BlobStore {
 		let deleted = 0;
 		for (const key of keys) {
 			try {
-				const response = await this.request(key, "DELETE");
 				// S3 answers 204 for a delete, and 404 for a key that is already gone;
 				// both mean the object will not be there tomorrow.
-				if (response.ok || response.status === 404) deleted += 1;
-				else failed.push(key);
+				const response = await this.request(key, "DELETE");
+				if (!response.ok && response.status !== 404) {
+					failed.push(key);
+					continue;
+				}
+				if (this.settings.purgeVersions) await this.deleteVersions(key);
+				deleted += 1;
 			} catch {
 				failed.push(key);
 			}
 		}
 		return { deleted, failed };
+	}
+
+	/**
+	 * Delete every remaining version of one key.
+	 *
+	 * This is not paranoia, it is how a versioned bucket works: on Backblaze B2 a
+	 * plain DELETE on a bucket set to "keep all versions" only *hides* the file, and
+	 * the hidden version carries on costing storage forever. Expired pastes would
+	 * therefore never actually leave the bucket, which is the opposite of what a
+	 * self-destructing paste service promises. Delete markers go too — they are
+	 * entries in the listing like any other.
+	 */
+	private async deleteVersions(key: string): Promise<number> {
+		const listed = await this.requestBucket("GET", [
+			["versions", ""],
+			["prefix", key],
+			["max-keys", "1000"],
+		]);
+		if (!listed.ok) return 0;
+		const versions = versionsOf(await listed.text(), key);
+		let removed = 0;
+		for (const versionId of versions) {
+			const response = await this.request(key, "DELETE", { query: [["versionId", versionId]] });
+			if (response.ok || response.status === 404) removed += 1;
+		}
+		return removed;
+	}
+
+	/**
+	 * One page of `key + last-modified`, for the orphan sweep. ListObjectsV2 is what
+	 * every S3-compatible service here supports; the continuation token is handed
+	 * straight back so the caller controls how deep a run goes.
+	 */
+	async list(
+		prefix: string,
+		token?: string,
+	): Promise<{ keys: Array<{ key: string; lastModified: number }>; next: string | null }> {
+		const query: [string, string][] = [
+			["list-type", "2"],
+			["prefix", prefix],
+			["max-keys", "1000"],
+		];
+		if (token) query.push(["continuation-token", token]);
+		const response = await this.requestBucket("GET", query);
+		if (!response.ok) throw new Error(`s3_list_failed: ${response.status}`);
+		const body = await response.text();
+		return { keys: listingsOf(body), next: singleTag(body, "NextContinuationToken") };
 	}
 
 	/**
@@ -339,7 +476,7 @@ export class S3ObjectStore implements BlobStore {
 		});
 		// Reusing the canonical query is not a shortcut, it is the requirement: the
 		// signature covers those exact bytes, so the URL has to send them unchanged.
-		return `${url.origin}${path}?${signed.canonicalQuery}&X-Amz-Signature=${signed.signature}`;
+		return `${url.protocol}//${url.host}${path}?${signed.canonicalQuery}&X-Amz-Signature=${signed.signature}`;
 	}
 }
 
@@ -370,6 +507,7 @@ export function s3SettingsFromEnv(env: AppEnv): S3Settings | null {
 		publicBase: env.S3_PUBLIC_BASE?.trim() || undefined,
 		prefix: env.S3_PREFIX?.trim() || "pp/v1",
 		virtualHostStyle: readYes(env.S3_VIRTUAL_HOST_STYLE),
+		purgeVersions: (env.S3_PURGE_VERSIONS?.trim().toLowerCase() ?? "on") !== "off",
 	};
 }
 

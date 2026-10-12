@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { deferrer } from "../lib/ctx";
 import type { AppBindings } from "../env";
 import { verifyPassword, verifyUnlockTicket } from "../lib/crypto";
 import { escapeHtml } from "../lib/format";
@@ -125,7 +126,7 @@ export async function getPastePage(c: Context<AppBindings>): Promise<Response> {
 		if (body.kind === "inline") inline = body.text;
 		else if (body.kind === "missing") {
 			// A row without a body means storage was lost mid-flight. Clean it up.
-			c.executionCtx.waitUntil(deletePaste(c.env, record).then(() => undefined));
+			deferrer(c)?.waitUntil(deletePaste(c.env, record).then(() => undefined));
 			return htmlError(c, {
 				status: 404,
 				title: "Nothing at this address",
@@ -134,7 +135,7 @@ export async function getPastePage(c: Context<AppBindings>): Promise<Response> {
 		}
 	}
 
-	recordView(c.env, config, record.id, c.executionCtx);
+	recordView(c.env, config, record.id, deferrer(c));
 
 	return c.html(renderPastePage({ config, record, inline, unlocked: true, now }));
 }
@@ -168,7 +169,7 @@ export async function getRawPaste(c: Context<AppBindings>): Promise<Response> {
 
 	const body = await openBody(c.env, record);
 	if (body.kind === "missing") {
-		c.executionCtx.waitUntil(deletePaste(c.env, record).then(() => undefined));
+		deferrer(c)?.waitUntil(deletePaste(c.env, record).then(() => undefined));
 		return notAvailable(c, "missing", wantsJson);
 	}
 	if (body.kind === "redirect") {
@@ -177,7 +178,7 @@ export async function getRawPaste(c: Context<AppBindings>): Promise<Response> {
 			: new Response(`${body.url}\n`, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
 	}
 	if (body.kind === "inline") {
-		recordView(c.env, c.get("config"), record.id, c.executionCtx);
+		recordView(c.env, c.get("config"), record.id, deferrer(c));
 		return wantsJson ? c.json({ id: record.id, kind: "text", content: body.text }) : textResponse(body.text);
 	}
 
@@ -358,7 +359,7 @@ export async function revealPaste(c: Context<AppBindings>): Promise<Response> {
 	}
 
 	// Single atomic claim: the row is only returned to the statement that finds it unread.
-	const claimed = await claimBurn(c.env, id, now);
+	const claimed = await claimBurn(c.env, id, now, deferrer(c));
 	if (!claimed) return notAvailable(c, "consumed", format === "json");
 
 	const body = await openBody(c.env, claimed);

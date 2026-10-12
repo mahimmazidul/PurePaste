@@ -35,7 +35,7 @@ export interface BlobBody {
  *                       free-tier usage; KV needs none).
  *
  * `./storage-provider` decides which of these is live (R2, an S3-compatible
- * bucket, Firebase Storage, KV), so switching is configuration, not a code edit.
+ * bucket or KV), so switching is configuration, not a code edit.
  * The R2 and KV shapes below stay the ones every other backend is modelled on.
  */
 export interface BlobStore {
@@ -47,7 +47,7 @@ export interface BlobStore {
 	delete(keys: string[]): Promise<{ deleted: number; failed: string[] }>;
 	/**
 	 * An optional link the visitor's browser can fetch by itself, bypassing this
-	 * Worker. Present on the S3-compatible and Firebase stores when the operator
+	 * Worker. Present on the S3-compatible store when the operator
 	 * configures a public bucket base (or, for S3, when presigned links are the
 	 * only option). R2 and KV return null: their reads already cost nothing extra.
 	 */

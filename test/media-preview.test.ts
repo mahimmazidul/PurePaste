@@ -77,6 +77,11 @@ describe("GET /p/:id/media", () => {
 
 		const media = await request(`/p/${created.id}/media`);
 		expect(media.status).toBe(200);
+		// The caching policy follows the configuration, never the caller: an instance
+		// that has not opted in must be no-store, and one that has must be public.
+		expect(media.headers.get("Cache-Control")).toBe(
+			testConfig.mediaCacheSeconds > 0 ? `public, max-age=${testConfig.mediaCacheSeconds}, immutable` : "no-store",
+		);
 		expect(media.headers.get("Content-Type")).toBe("image/png");
 		expect(media.headers.get("Content-Disposition")).toContain('inline; filename="pixel.png"');
 		expect(media.headers.get("X-Content-Type-Options")).toBe("nosniff");
@@ -101,7 +106,9 @@ describe("GET /p/:id/media", () => {
 
 		const again = await request(`/p/${created.id}/media`, { headers: { "if-none-match": etag! } });
 		expect(again.status).toBe(304);
-		expect(again.headers.get("Cache-Control")).toBe("no-store");
+		// A cache hit has to carry the same policy as the miss, or a shared cache would
+		// extend a lifetime nobody chose.
+		expect(again.headers.get("Cache-Control")).toBe(first.headers.get("Cache-Control"));
 	});
 
 	it("never burns, never counts a view, and leaves the paste readable", async () => {
@@ -160,6 +167,7 @@ describe("GET /p/:id/media", () => {
 
 		const allowed = await request(`/p/${created.id}/media`, { headers: { cookie } });
 		expect(allowed.status).toBe(200);
+		// Locked, so nothing may be cached anywhere, whatever the instance prefers.
 		expect(allowed.headers.get("Cache-Control")).toBe("no-store");
 	});
 

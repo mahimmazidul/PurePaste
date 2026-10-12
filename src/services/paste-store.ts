@@ -8,6 +8,12 @@ import type { CreatePasteInput, CreatedPaste, PasteRecord, ReadResult } from "..
 import { MetadataStore } from "./metadata-store";
 import type { BlobBody, BlobStore, ObjectKind } from "./object-store";
 import { resolveStorage } from "./storage-provider";
+import { supabaseStore } from "./supabase-store";
+
+/** Anything with `waitUntil`: the Worker execution context, in practice. */
+export interface Deferrer {
+	waitUntil(promise: Promise<unknown>): void;
+}
 
 export interface Stores {
 	meta: MetadataStore;
@@ -19,7 +25,7 @@ export function stores(env: AppEnv): Stores {
 }
 
 /**
- * Picks the blob backend (R2, an S3-compatible bucket, Firebase Storage, or KV).
+ * Picks the blob backend: R2, an S3-compatible bucket, or KV.
  * Metadata always lives in D1, so swapping this changes nothing about how reads,
  * burns, expiry and the cleanup sweep work. See ./storage-provider.
  */
@@ -31,6 +37,12 @@ export interface CreateOptions {
 	/** Injected in tests to force a collision. */
 	idFactory?: () => string;
 	now?: number;
+	/**
+	 * The execution context, when the caller has one. A mirror write is handed to
+	 * `waitUntil` instead of being awaited, so a visitor never pays for a round trip
+	 * to another region. Without it (tests, cron) the write is simply awaited.
+	 */
+	ctx?: Deferrer;
 }
 
 /**
@@ -100,7 +112,10 @@ export async function createPaste(
 			throw error;
 		}
 
-		if (outcome === "created") return { record, manageToken };
+		if (outcome === "created") {
+			await mirrorRecord(env, record, options.ctx);
+			return { record, manageToken };
+		}
 
 		// The id was taken. Remove the object written for this attempt so a retry can
 		// never leave an unreferenced file behind, then either report the clash or
@@ -110,6 +125,21 @@ export async function createPaste(
 	}
 
 	throw new Error("Could not allocate a unique paste id");
+}
+
+/**
+ * Mirror one record to Supabase, if this instance has a Supabase mirror at all.
+ *
+ * The rule everywhere in this file: the mirror is allowed to be slow, wrong or
+ * down, and must never make a visitor's request fail or wait. Errors land in the
+ * store's status, which `GET /api/config` publishes.
+ */
+export async function mirrorRecord(env: AppEnv, record: PasteRecord, ctx?: Deferrer): Promise<void> {
+	const mirror = supabaseStore(env);
+	if (!mirror) return;
+	const task = mirror.upsert(record).catch(() => false);
+	if (ctx) ctx.waitUntil(task);
+	else await task;
 }
 
 async function safeDeleteObject(objects: BlobStore, key: string): Promise<void> {
@@ -170,7 +200,17 @@ export interface LoadOptions {
 export async function loadPaste(env: AppEnv, id: string, options: LoadOptions = {}): Promise<ReadResult> {
 	const now = options.now ?? Date.now();
 	const { meta } = stores(env);
-	const record = await meta.findById(id);
+	let record: PasteRecord | null;
+	try {
+		record = await meta.findById(id);
+	} catch (error) {
+		// D1 had a bad minute. The mirror is a full copy of what is live, so a paste
+		// does not have to go dark for it: read the other region instead.
+		const mirror = supabaseStore(env);
+		const fallback = mirror ? await mirror.findById(id).catch(() => null) : null;
+		if (!fallback) throw error;
+		record = fallback;
+	}
 	if (!record) return { status: "missing" };
 
 	// Expiry is evaluated on every read; the scheduled sweep is what removes the row
@@ -204,8 +244,22 @@ export async function openBody(env: AppEnv, record: PasteRecord): Promise<BodyRe
  * Atomically claims a burn-after-reading paste. Returns null when the paste was
  * already opened by somebody else, or when it has expired.
  */
-export async function claimBurn(env: AppEnv, id: string, now = Date.now()): Promise<PasteRecord | null> {
-	return stores(env).meta.claimBurn(id, now);
+export async function claimBurn(
+	env: AppEnv,
+	id: string,
+	now = Date.now(),
+	ctx?: Deferrer,
+): Promise<PasteRecord | null> {
+	const record = await stores(env).meta.claimBurn(id, now);
+	if (record) {
+		const mirror = supabaseStore(env);
+		if (mirror) {
+			const task = mirror.markConsumed(id, now).catch(() => undefined);
+			if (ctx) ctx.waitUntil(task);
+			else await task;
+		}
+	}
+	return record;
 }
 
 /* ------------------------------------------------------------------ *
@@ -229,12 +283,17 @@ export interface DeleteResult {
  */
 export async function deletePaste(env: AppEnv, record: PasteRecord): Promise<DeleteResult> {
 	const { meta, objects } = stores(env);
+	const mirror = supabaseStore(env);
 	let objectRemoved = true;
 
 	if (record.objectKey) {
 		const result = await objects.delete([record.objectKey]);
 		objectRemoved = result.failed.length === 0;
 	}
+
+	// The mirror follows the primary, whatever the object store said: a row that
+	// stops being readable in D1 must stop being readable everywhere.
+	await mirror?.deleteMany([record.id]).catch(() => undefined);
 
 	if (!objectRemoved) {
 		// Tombstone: content is unreachable, and the sweep owns the retry loop.

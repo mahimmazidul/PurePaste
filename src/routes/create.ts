@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { deferrer } from "../lib/ctx";
 import type { Config } from "../config";
 import type { AppBindings } from "../env";
 import { fail, isAppError } from "../lib/errors";
@@ -86,7 +87,7 @@ async function runCreate(
 	await verifyTurnstile(c.env, config, browserForm ? parsed.turnstileToken : null, clientAddress(c));
 
 	const input = assemble(parsed, config);
-	const created = await createPaste(c.env, config, input);
+	const created = await createPaste(c.env, config, input, { ctx: deferrer(c) });
 	const origin = new URL(c.req.url).origin;
 
 	// The form path always answers with a page. The API path follows the Accept header.

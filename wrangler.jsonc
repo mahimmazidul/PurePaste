@@ -23,14 +23,14 @@
       "migrations_dir": "migrations"
     }
   ],
-  // Blob storage. Upstream PurePaste binds an R2 bucket, but activating R2
-  // requires a payment method even for free-tier usage, so this deployment
-  // binds a Workers KV namespace instead (free, no card). The server picks R2
-  // when an r2_buckets entry is present and KV otherwise, so switching back
-  // later is a config-only change: restore the r2_buckets block, drop this one.
-  // KV caveats: values propagate to all edges within ~60s (a very fresh large
-  // paste can briefly miss from a distant colo), 25 MiB max value, and the
-  // free tier allows 1k writes + 1k deletes + 100k reads per day.
+  // Blob storage is a Backblaze B2 bucket now (see S3_* below), which is why this
+  // namespace still exists: files uploaded while KV was the store are readable
+  // through it until the hourly sweep has deleted them from both places. Set
+  // STORAGE_FALLBACK to "off" once the namespace is empty, and drop this block
+  // with it. Upstream PurePaste uses R2; activating R2 needs a payment method even
+  // for free-tier usage, so this fork went KV first and B2 second.
+  // KV caveats, for the record: ~60s propagation to edges, 25 MiB max value, and
+  // 1k writes + 1k deletes + 100k reads per day.
   "kv_namespaces": [
     {
       "binding": "BLOBS",
@@ -57,19 +57,39 @@
     }
   ],
   "vars": {
+    // Where the bytes live. B2 is a plain S3 target: endpoint, bucket and region are
+    // configuration, the key pair is secrets (see README). Nothing is pinned here on
+    // purpose: the selection order (R2, then a complete S3 set, then KV) already
+    // picks B2 for this deployment, and it keeps a test environment without S3 keys
+    // working against KV. Pin it (STORAGE_PROVIDER = "s3") if you would rather a
+    // missing key be an error than a quiet fall back — the trade is exactly that.
+    "S3_ENDPOINT": "https://s3.us-east-005.backblazeb2.com",
+    "S3_BUCKET": "purepaste",
+    "S3_REGION": "us-east-005",
+    "S3_PREFIX": "pp/v1",
+    "STORAGE_FALLBACK": "auto",
+    // Supabase is a second runtime store: writes are mirrored there and reads fall
+    // back to it when D1 fails. The publishable key is safe in a var because the
+    // shipped schema grants it nothing but the keep-alive function; the service key,
+    // which can read rows, goes in as SUPABASE_SECRET_KEY.
+    "SUPABASE_URL": "https://mptumaoctfxpvqhaytqd.supabase.co",
     // Hard ceiling for every paste. The application clamps this to 30 days even if raised here.
     "MAX_TTL_SECONDS": "2592000",
     "DEFAULT_TTL_SECONDS": "604800",
     "INLINE_TEXT_MAX_BYTES": "65536",
     "TEXT_MAX_BYTES": "10485760",
-    "FILE_MAX_BYTES": "26214400",
+    // 50 MiB now that files live in B2: KV's 25 MiB value cap was the old ceiling.
+    "FILE_MAX_BYTES": "52428800",
     "PASSWORD_ITERATIONS": "210000",
     "UNLOCK_COOKIE_TTL_SECONDS": "1800",
     "FEATURE_REDIRECT": "on",
     "FEATURE_VIEW_COUNTING": "off",
     "FEATURE_TURNSTILE": "off",
     "CLEANUP_BATCH_SIZE": "100",
-    "CLEANUP_MAX_BATCHES": "5"
+    "CLEANUP_MAX_BATCHES": "5",
+    // Edge-cacheable for five minutes, and only for pastes that are public,
+    // unlocked and not burn-after-reading. Set to 0 to make every response no-store.
+    "MEDIA_CACHE_SECONDS": "300"
   },
   "observability": {
     "enabled": true,

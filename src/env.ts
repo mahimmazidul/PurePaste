@@ -33,8 +33,8 @@ export interface AppEnv {
 
 	/**
 	 * Blob backend. Absent means `auto`: R2 if a bucket is bound, then a
-	 * configured S3 endpoint, then Firebase, then the KV namespace. Set it
-	 * explicitly to `kv | r2 | s3 | firebase` to pin one.
+	 * configured S3 endpoint, then the KV namespace. Set it
+	 * explicitly to `kv | r2 | s3` to pin one and turn a missing configuration into an error.
 	 */
 	STORAGE_PROVIDER?: string;
 	/** Any S3-compatible endpoint: Backblaze B2, Supabase Storage, R2, MinIO. */
@@ -46,6 +46,14 @@ export interface AppEnv {
 	/** Public base for direct links, so bytes can skip the Worker entirely. */
 	S3_PUBLIC_BASE?: string;
 	S3_PREFIX?: string;
+	/**
+	 * `on` (default) deletes every stored *version* of a key, not just the current
+	 * one. B2 buckets configured to keep versions otherwise grow forever: a plain
+	 * DELETE only hides the file there.
+	 */
+	S3_PURGE_VERSIONS?: string;
+	/** Read-through store for blobs written before the current backend: `kv`, `r2` or `off`. */
+	STORAGE_FALLBACK?: string;
 	/** `on` for endpoints that only accept `<bucket>.<host>` addressing (Supabase). */
 	S3_VIRTUAL_HOST_STYLE?: string;
 	/**
@@ -54,13 +62,19 @@ export interface AppEnv {
 	 * for images, video and audio.
 	 */
 	STORAGE_DIRECT_LINKS?: string;
-	/** Firebase Storage: service-account JSON fields, pasted as secrets. */
-	FIREBASE_PROJECT_ID?: string;
-	FIREBASE_BUCKET?: string;
-	FIREBASE_CLIENT_EMAIL?: string;
-	FIREBASE_PRIVATE_KEY?: string;
-	/** Only for a bucket whose objects are public; otherwise links stay proxied. */
-	FIREBASE_PUBLIC_BASE?: string;
+	/**
+	 * Supabase, used at runtime rather than as a backup: every write is mirrored and
+	 * reads fall back to it when D1 is unhappy. Anon key alone = keep-alive only;
+	 * the service key turns the mirror on. See ./services/supabase-store.
+	 */
+	SUPABASE_URL?: string;
+	SUPABASE_ANON_KEY?: string;
+	SUPABASE_SECRET_KEY?: string;
+	SUPABASE_TABLE?: string;
+	/** on | off | auto (default: mirror only when a service key is present). */
+	SUPABASE_MIRROR?: string;
+	/** Hourly cron pings the project so a free plan never pauses it. on by default. */
+	SUPABASE_KEEPALIVE?: string;
 
 	/** Secrets. */
 	APP_SECRET?: string;

@@ -1,6 +1,7 @@
 import type { Config } from "../config";
 import type { AppEnv } from "../env";
 import { stores } from "./paste-store";
+import { supabaseStore } from "./supabase-store";
 
 /**
  * Optional view counting.
@@ -43,7 +44,8 @@ function flushViews(env: AppEnv, ctx?: Deferrer): void {
 		.meta.addViews(entries)
 		.catch(() => {
 			// Approximation is acceptable: a dropped flush must never fail a read.
-		});
+		})
+		.then(() => supabaseStore(env)?.addViews(entries));
 	if (ctx) ctx.waitUntil(write);
 }
 
@@ -54,6 +56,7 @@ export async function flushViewsNow(env: AppEnv): Promise<number> {
 	lastFlushAt = Date.now();
 	if (entries.length === 0) return 0;
 	await stores(env).meta.addViews(entries);
+	await supabaseStore(env)?.addViews(entries);
 	return entries.length;
 }
 

@@ -129,7 +129,7 @@ export function resolveConfig(env: object): Config {
 		passwordIterations: readInt(field(env, "PASSWORD_ITERATIONS"), 210_000, 100_000, 1_000_000),
 		mediaCacheSeconds: readInt(field(env, "MEDIA_CACHE_SECONDS"), 0, 0, 31_536_000),
 		storageDirectOrigin: readFlag(field(env, "STORAGE_DIRECT_LINKS"), false)
-			? httpsOrigin(field(env, "S3_PUBLIC_BASE") ?? field(env, "FIREBASE_PUBLIC_BASE"))
+			? httpsOrigin(field(env, "S3_PUBLIC_BASE"))
 			: undefined,
 		unlockCookieTtlSeconds: readInt(field(env, "UNLOCK_COOKIE_TTL_SECONDS"), 1800, 60, 24 * 60 * 60),
 		redirectEnabled: readFlag(field(env, "FEATURE_REDIRECT"), true),
