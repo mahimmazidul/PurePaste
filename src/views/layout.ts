@@ -2,8 +2,23 @@ import { escapeHtml } from "../lib/format";
 import type { Config } from "../config";
 
 /**
+ * The repository this deployment was built from. Every link to it on the site comes
+ * from here, so a fork changes one line and the copy stays true.
+ */
+export const REPO_URL = "https://github.com/mahimmazidul/PurePaste";
+
+/** `github.com/mahimmazidul/PurePaste`, for the places where a URL reads better than a word. */
+export const REPO_LABEL = REPO_URL.replace(/^https?:\/\//, "");
+
+/** The attributes every outbound link to the repository carries. */
+export const REPO_LINK_ATTRS = 'target="_blank" rel="noopener noreferrer"';
+
+/**
  * Icons drawn on a 20×20 grid, 1.6 strokes: quiet line work that matches the
- * paper design. No icon library, no license text needed beyond our own.
+ * paper design. One exception, at the bottom: the GitHub mark is their artwork
+ * rather than ours, in the public domain (CC0, via Simple Icons), and it is used
+ * for the one thing it means — a link to a repository. Its licence text ships at
+ * /assets/licenses/github-CC0.txt and is listed on /licenses like everything else.
  */
 export const icons = {
 	copy: `<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7.25" y="7.25" width="9.5" height="9.5" rx="2.5"/><path d="M12.75 4.6a2.5 2.5 0 0 0-2.5-2.35H5.5A2.5 2.5 0 0 0 3 4.75v4.75a2.5 2.5 0 0 0 2.35 2.5"/></svg>`,
@@ -32,6 +47,9 @@ export const icons = {
 	plus: `<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M10 5v10M5 10h10"/></svg>`,
 	chevronDown: `<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 8 10 12.5 14.5 8"/></svg>`,
 	wrap: `<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.6 5.4h12.8M3.6 10h9.6a2.6 2.6 0 0 1 0 5.2h-2.4"/><path d="M12.4 13.4 10.6 15.2l1.8 1.8"/><path d="M3.6 14.6h3.2"/></svg>`,
+	// Solid rather than stroked, because it is a mark and not a drawing: an 8×8
+	// cat on a 20×20 grid would be a smudge of ink at the sizes we use it.
+	github: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>`,
 } as const;
 
 export type IconName = keyof typeof icons;
@@ -97,6 +115,7 @@ ${turnstileScript}
 		<a class="wordmark" href="/" aria-label="Slip home">Slip<span class="wordmark-dot">.</span></a>
 		<div class="header-side">
 			${tagline}
+			<a class="repo-link" href="${REPO_URL}" ${REPO_LINK_ATTRS} aria-label="Source code on GitHub" title="The code for this site, on GitHub">${icons.github}</a>
 			<button type="button" class="theme-toggle" data-theme-toggle aria-label="Switch theme" title="Switch theme">
 				<span class="theme-icon-dark">${icons.sun}</span>
 				<span class="theme-icon-light">${icons.moon}</span>
@@ -110,7 +129,7 @@ ${options.body}
 <footer class="site-footer hairline-t">
 	<div class="shell footer-inner">
 		<p>Everything on Slip expires. Nothing is listed or indexed — the link is the only way in.</p>
-		<nav aria-label="Footer"><p class="footer-links"><a href="/about">How it works</a> · <a href="/docs">API</a> · <a href="/licenses">Licences</a></p></nav>
+		<nav aria-label="Footer"><p class="footer-links"><a href="/about">How it works</a> · <a href="/docs">API</a> · <a href="/licenses">Licences</a> · <a href="${REPO_URL}" ${REPO_LINK_ATTRS}>Source</a></p></nav>
 	</div>
 </footer>
 <div class="toast-stack" data-toasts aria-live="polite" aria-atomic="false"></div>

@@ -2,7 +2,9 @@
 
 _(repository and Worker still named PurePaste — the product the pages speak is Slip.)_
 
-A small, accountless service for text, files and short honest links, running entirely on Cloudflare. One Worker, one D1 database for metadata, one R2 bucket for bodies, and an hourly cron that cleans up after itself.
+**Source:** <https://github.com/mahimmazidul/PurePaste> — MIT, and the whole of it: Worker, client, schema and the cleanup cron. The site links to this repository from the mark in its header, so the running instance and the code you can read are the same thing.
+
+A small, accountless service for text, files and short honest links, running entirely on Cloudflare. One Worker, one D1 database for metadata, an object store for bodies (this deployment uses Backblaze B2 and a KV namespace as one pool), and an hourly cron that cleans up after itself.
 
 Every slip expires — 30 days is the hard ceiling and the server enforces it, not the page you are looking at.
 The front page is one composer with three tabs — **a slip** of text, **a link** that shows its destination before anyone hops, **a file** up to 25 MiB — with a quiet stat bar of live totals underneath and a browser-local drawer of everything this device sealed. There are no accounts, no listing of what other people have pasted, no analytics, and nothing loaded from a third party. The link is the only way in, and the management link is the only way to remove something early.

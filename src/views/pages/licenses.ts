@@ -1,6 +1,6 @@
 import type { Config } from "../../config";
 import { escapeHtml } from "../../lib/format";
-import { renderLayout } from "../layout";
+import { renderLayout, REPO_LABEL, REPO_LINK_ATTRS, REPO_URL } from "../layout";
 
 interface Entry {
 	name: string;
@@ -16,6 +16,13 @@ interface Entry {
  * belong on a page that can be linked without any third party being contacted.
  */
 const ENTRIES: Entry[] = [
+	{
+		name: "GitHub mark",
+		what: "The logo in the header and the link beside it, used to point at the repository.",
+		licence: "CC0 1.0 Universal",
+		file: "/assets/licenses/github-CC0.txt",
+		note: "Copyright reserved to GitHub, Inc.; the traced mark is dedicated to the public domain.",
+	},
 	{
 		name: "Inter",
 		what: "The interface typeface, served as one variable font.",
@@ -63,7 +70,7 @@ export function renderLicensesPage(config: Config): string {
 
 	<section class="card">
 		<h2 class="h3">This application</h2>
-		<p>Slip itself is released under the MIT licence. The source, and the licences of everything listed below, sit together in the same repository.</p>
+		<p>Slip itself is released under the MIT licence. The source — <a href="${REPO_URL}" ${REPO_LINK_ATTRS}>${escapeHtml(REPO_LABEL)}</a> — and the licences of everything listed below sit together in the same repository.</p>
 		<p class="field-note">Slips, files and links you seal belong to whoever pasted them. Nothing here claims a licence over your content.</p>
 	</section>
 

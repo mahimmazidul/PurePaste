@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createPaste, readJson, request, resetStorage } from "./helpers";
 import { buildCsp, CSP_FOR_CONTENT } from "../src/middleware/security";
+import { REPO_URL } from "../src/views/layout";
 
 /** Every response the Worker produces, whatever else changes, must carry these. */
 describe("security headers", () => {
@@ -100,12 +101,32 @@ describe("page markup", () => {
 		}
 	});
 
-	it("points at local assets only", async () => {
-		const html = await (await request("/")).text();
-		const urls = Array.from(html.matchAll(/(?:src|href)="([^"]+)"/g)).map((match) => match[1]!);
-		const external = urls.filter((url) => /^https?:/i.test(url));
+	// What this is protecting is that a page load touches nobody else: no font, no
+	// script, no pixel fetched from another site. A link the visitor may choose to
+	// follow is a different thing — it sends nothing on its own, and the pages carry
+	// `Referrer-Policy: no-referrer` — so the repository link is allowed, and it is
+	// the only outbound address any page may name.
+	it("loads nothing from another site and links out to exactly one place", async () => {
+		for (const path of ["/", "/about", "/docs", "/licenses", "/pastes"]) {
+			const html = await (await request(path)).text();
 
-		expect(external).toEqual([]); // Turnstile is off in this configuration
+			// Strip the anchors: everything left is something the browser fetches.
+			const fetched = html.replace(/<a\b[\s\S]*?<\/a>/g, "");
+			const loads = Array.from(fetched.matchAll(/(?:src|href|action)="([^"]+)"/g)).map((match) => match[1]!);
+			expect(loads.filter((url) => /^https?:/i.test(url))).toEqual([]); // Turnstile is off here
+			expect(html).not.toMatch(/url\(\s*['"]?https?:/i);
+			expect(html).not.toMatch(/<link[^>]+rel=["']?(preload|prefetch|dns-preset|preconnect)/i);
+
+			const anchors = Array.from(html.matchAll(/<a\b[^>]*href="([^"]+)"/g)).map((match) => match[1]!);
+			const outbound = [...new Set(anchors.filter((url) => /^https?:/i.test(url)))];
+			expect(outbound).toEqual([REPO_URL]);
+			// And it hands the new tab nothing back, nor the address of the paste.
+			for (const link of html.matchAll(/<a\b[^>]*href="https:[^"]*"[^>]*>/g)) {
+				expect(link[0]).toContain('rel="noopener noreferrer"');
+			}
+		}
+
+		const html = await (await request("/")).text();
 		expect(html).toContain("/assets/styles/app.css");
 		expect(html).toContain("/assets/fonts/fonts.css");
 		expect(html).toContain("/assets/scripts/theme.js");

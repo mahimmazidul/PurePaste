@@ -289,11 +289,25 @@ main.shell {
   gap: 1rem;
 }
 
+/* The header row holds a wordmark and two fixed squares, so the words are what give
+   way: first by trimming, then by disappearing on the narrowest phones, where the
+   line is decoration rather than information. */
 .tagline {
   color: var(--ink-3);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.theme-toggle {
+@media (max-width: 26rem) {
+  .tagline {
+    display: none;
+  }
+}
+
+.theme-toggle,
+.repo-link {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -309,13 +323,31 @@ main.shell {
     color 0.15s ease;
 }
 
-.theme-toggle:hover {
+.theme-toggle:hover,
+.repo-link:hover {
   border-color: var(--line-strong);
   color: var(--ink);
 }
 
-.theme-toggle .icon {
+.theme-toggle .icon,
+.repo-link .icon {
   display: flex;
+}
+
+/* The mark is an icon, not a sentence: no underline, no inherited text cursor. And
+   neither box shrinks - a 27px "square" with a 16px mark in it is not a square. */
+.repo-link {
+  text-decoration: none;
+  color: var(--ink-2);
+}
+
+.theme-toggle,
+.repo-link {
+  flex-shrink: 0;
+}
+
+.repo-link svg {
+  display: block;
 }
 
 .theme-icon-dark {

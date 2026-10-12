@@ -1,6 +1,6 @@
 import type { Config } from "../../config";
 import { escapeHtml, formatDuration } from "../../lib/format";
-import { icons, renderLayout } from "../layout";
+import { icons, REPO_LABEL, REPO_LINK_ATTRS, REPO_URL, renderLayout } from "../layout";
 
 export function renderAboutPage(config: Config): string {
 	const fileLimit = `${Math.floor(config.fileMaxBytes / 1024 / 1024)} MiB`;
@@ -82,6 +82,7 @@ curl -s /raw/&lt;id&gt;</code></pre>
 	<section class="card">
 		<h2 class="h2">Running your own</h2>
 		<p>Slip is a single Cloudflare Worker with a D1 database, object storage and one hourly cron trigger. It has no accounts to manage and no admin panel to secure — which is exactly why there is nothing here to log into. ${icons.info} The README covers the exact commands.</p>
+		<p>And it is all here, in the open: <a href="${REPO_URL}" ${REPO_LINK_ATTRS}>${escapeHtml(REPO_LABEL)}</a>, MIT licence, the same code this page is built from. Server, client, database schema, the cleanup cron, the lot — there is no hosted admin panel or closed service behind it, so what you read in the source is what the site does. Read it, fork it, run your own.</p>
 	</section>
 `;
 

@@ -1,6 +1,6 @@
 import { escapeHtml, formatBytes } from "../../lib/format";
 import type { Config } from "../../config";
-import { button, renderLayout } from "../layout";
+import { button, renderLayout, REPO_LABEL, REPO_LINK_ATTRS, REPO_URL } from "../layout";
 
 /**
  * The API reference, served by the instance it documents.
@@ -187,6 +187,7 @@ curl -s -X POST ${origin}/api/links/<id>/reveal`,
 		<div><dt>Unlocks</dt><dd>20 requests / minute per paste at the edge</dd></div>
 	</dl>
 	<p class="field-note">${code("GET /api/config")} returns these as JSON, so a client never has to guess. Edge rate limiting is configured here and degrades to no limit where the hosting plan does not provide it.</p>
+	<p class="field-note">The code behind every endpoint on this page — Worker, client, schema and cron — is open and MIT licensed at <a href="${REPO_URL}" ${REPO_LINK_ATTRS}>${escapeHtml(REPO_LABEL)}</a>.</p>
 </section>
 
 <section class="card">
