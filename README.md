@@ -2,7 +2,13 @@
 
 _(repository and Worker still named PurePaste — the product the pages speak is Slip.)_
 
+![Slip: a paper-coloured card with the wordmark, three tabs — a slip, a link, a file — and a short link that fades in seven days](docs/github-social-preview.png)
+
+**Live:** <https://purepaste.byaislop.workers.dev> — the instance this repository builds, on Cloudflare Workers.
+
 **Source:** <https://github.com/mahimmazidul/PurePaste> — MIT, and the whole of it: Worker, client, schema and the cleanup cron. The site links to this repository from the mark in its header, so the running instance and the code you can read are the same thing.
+
+The card above is generated rather than drawn: `python3 docs/render-social-preview.py` rebuilds it from the palette and the three typefaces this site already serves, so a fork gets a matching preview for free. It is also what GitHub shows when the repository is shared — Settings → General → Social preview, then upload this file.
 
 A small, accountless service for text, files and short honest links, running entirely on Cloudflare. One Worker, one D1 database for metadata, an object store for bodies (this deployment uses Backblaze B2 and a KV namespace as one pool), and an hourly cron that cleans up after itself.
 
