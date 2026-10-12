@@ -731,8 +731,17 @@ What is covered: creation and validation (slugs, reserved names, collision retry
 
 ---
 
+## Community
+
+Two files hold the expectations, and they are worth reading before a first patch rather than after a first review:
+
+- [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) - the commands that gate a commit, the shape of the code, the three rules every change has to respect, and the list of things this project deliberately will not do.
+- [`docs/CODE_OF_CONDUCT.md`](docs/CODE_OF_CONDUCT.md) - Contributor Covenant 2.1. One maintainer enforces it, and the file says what that realistically means.
+
+[SECURITY.md](SECURITY.md) defines what counts as a vulnerability for a link-only store on a clock, what does not, and where to send the former; it also says plainly not to probe the public instance. Issues use forms, on purpose: a bug report here is a command, an expected result and the JSON from `GET /api/config`, and both templates say as much before the first box.
+
 ## Licence and credits
 
-PurePaste is MIT licensed. The fonts, and the two libraries the browser bundle uses, are credited on the `/licenses` page in the running application and their licence texts ship in `public/assets/licenses/`: Manrope and IBM Plex Mono (SIL Open Font Licence 1.1), highlight.js (BSD 3-Clause), and qrcode-generator (MIT).
+PurePaste is MIT licensed. The fonts and the one library the browser bundle uses are credited on the `/licenses` page in the running application, and their licence texts ship in `public/assets/licenses/`: Inter, Instrument Serif and JetBrains Mono (SIL Open Font Licence 1.1), the GitHub mark in the header (CC0), and highlight.js (BSD 3-Clause).
 
-Built with [Hono](https://hono.dev) and [Cloudflare Workers](https://developers.cloudflare.com/workers/), D1, R2 and Workers Static Assets.
+Built with [Hono](https://hono.dev) on [Cloudflare Workers](https://developers.cloudflare.com/workers/): D1 for metadata, KV or any S3-compatible bucket for bodies, and Workers Static Assets for everything the browser loads. Nothing here needs a paid plan to run; the limits of the free ones are what the defaults are tuned to.
