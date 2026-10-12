@@ -9,7 +9,8 @@ export function initViewer(): void {
 	if (!pasteId) return;
 
 	upgradeRelativeTimes();
-	wireCopyButtons();
+	// Copy buttons are already wired: boot() does that for every page, and wiring
+	// them twice here is what put two "Copied" toasts on one click.
 	wireFileText();
 	wireWrapToggle();
 	wireLetGo(pasteId);
@@ -63,23 +64,44 @@ function wireFileText(): void {
 	});
 }
 
-/** Copy buttons work on any page: they copy the value of the input they name. */
+/** Elements whose click handler is already in place. */
+const wired = new WeakSet<Element>();
+
+/**
+ * Copy buttons work on any page: they copy the value of the input they name.
+ *
+ * Each button is wired at most once, however many callers ask for it. A second
+ * listener on the same element means a second clipboard write and a second
+ * "Copied" toast for a single click, which is a thing that used to happen here.
+ */
 export function wireCopyButtons(root: ParentNode = document): void {
+	const once = <T extends Element>(element: T | null, bind: (target: T) => void): void => {
+		if (!element || wired.has(element)) return;
+		wired.add(element);
+		bind(element);
+	};
+
 	for (const button of qsa<HTMLButtonElement>("[data-copy-target]", root)) {
-		button.addEventListener("click", () => {
-			const field = qs<HTMLInputElement>(`#${button.dataset.copyTarget}`, root);
-			if (field) void copyText(field.value);
+		once(button, (target) => {
+			target.addEventListener("click", () => {
+				const field = qs<HTMLInputElement>(`#${target.dataset.copyTarget}`, root);
+				if (field) void copyText(field.value);
+			});
 		});
 	}
 
 	// "Copy link" copies the current URL, fragment and all: for an encrypted slip
 	// the fragment is the key, so dropping it would break the link.
-	qs("[data-copy-link]", root)?.addEventListener("click", () => void copyText(location.href, "Link copied"));
+	once(qs("[data-copy-link]", root), (target) => {
+		target.addEventListener("click", () => void copyText(location.href, "Link copied"));
+	});
 
-	qs("[data-copy-content]", root)?.addEventListener("click", () => {
-		const text = currentPlainText();
-		if (text === null) announce("Nothing to copy yet", "error");
-		else void copyText(text, "Copied");
+	once(qs("[data-copy-content]", root), (target) => {
+		target.addEventListener("click", () => {
+			const text = currentPlainText();
+			if (text === null) announce("Nothing to copy yet", "error");
+			else void copyText(text, "Copied");
+		});
 	});
 }
 
