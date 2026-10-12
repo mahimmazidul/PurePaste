@@ -20,7 +20,6 @@ create table if not exists public.pastes (
 	size_bytes        bigint not null default 0,
 	content           text,
 	object_key        text,
-	blob_store        text,
 	password_salt     text,
 	password_verifier text,
 	password_iterations integer,
@@ -36,9 +35,10 @@ create table if not exists public.pastes (
 	views             bigint not null default 0
 );
 
--- The D1 migration 0002 adds this column to an existing table; the same change is
--- made here so a project that was set up before it keeps the two copies identical.
-alter table public.pastes add column if not exists blob_store text;
+-- Deliberately NOT mirrored: `pastes.blob_store` in D1 (migration 0002), the pointer
+-- to which blob store holds a body. It exists to save a read one subrequest, and a
+-- fallback read of this copy is happy to ask every store instead. Leaving it out keeps
+-- an existing project's schema valid, which matters more than symmetry here.
 
 -- What the sweep and the fallback read need; mirrors the D1 indexes.
 create index if not exists pastes_expires_at_idx on public.pastes (expires_at);

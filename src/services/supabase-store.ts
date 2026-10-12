@@ -102,6 +102,12 @@ interface SupabaseRow {
 	size_bytes: number | null;
 	content: string | null;
 	object_key: string | null;
+	/**
+	 * Which blob store holds the body. D1-only by design: a fallback read through this
+	 * copy has other things to be grateful for than saving one subrequest, and the pool
+	 * answers an unknown placement by asking every store. Absent from `toRow` so the
+	 * shipped schema does not need a second run just to keep mirroring working.
+	 */
 	blob_store?: string | null;
 	password_salt: string | null;
 	password_verifier: string | null;
@@ -167,7 +173,6 @@ function toRow(record: PasteRecord): Record<string, unknown> {
 		size_bytes: record.sizeBytes,
 		content: record.content,
 		object_key: record.objectKey,
-		blob_store: record.blobStore,
 		password_salt: record.passwordSalt,
 		password_verifier: record.passwordVerifier,
 		password_iterations: record.passwordIterations,
