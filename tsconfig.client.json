@@ -13,8 +13,8 @@
     "isolatedModules": true,
     "skipLibCheck": true,
     "noEmit": true,
-    // qrcode-generator and highlight.js ship CommonJS typings; the bundler
-    // handles the interop and this keeps the types honest about it.
+    // highlight.js ships CommonJS typings; the bundler handles the interop and
+    // this keeps the types honest about it.
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true
   },
