@@ -3,7 +3,14 @@ import worker from "../src/index";
 import type { AppEnv } from "../src/env";
 import { resolveConfig } from "../src/config";
 import { buildCsp } from "../src/middleware/security";
-import { ReadThroughStore, resolveStorage } from "../src/services/storage-provider";
+import {
+	BlobPool,
+	DEFAULT_POLICY,
+	poolMember,
+	resolveStorage,
+	type PoolPolicy,
+	type StorageProvider,
+} from "../src/services/storage-provider";
 import { S3ObjectStore, s3SettingsFromEnv, testing } from "../src/services/s3-store";
 import { createPaste, objectKeys, readRow, request, resetStorage, testConfig, testEnv } from "./helpers";
 import { sweep } from "../src/services/cleanup";
@@ -68,10 +75,13 @@ describe("storage backends", () => {
 
 	it("reports the live backend through the public config endpoint", async () => {
 		const body = (await (await request("/api/config")).json()) as {
-			storage: { provider: string; reason: string; direct_links: boolean };
+			storage: { provider: string; reason: string; direct_links: boolean; mode: string };
 		};
 		// The test Worker binds KV only, which is also the shape of the live deploy.
 		expect(body.storage.provider).toBe("kv");
+		// One store bound is a pool of one, and says so: the mode is about how many
+		// stores take writes, not about which class is running.
+		expect(body.storage.mode).toBe("single");
 		expect(body.storage.direct_links).toBe(false);
 		expect(body.storage.reason).toContain("BLOBS");
 	});
@@ -328,24 +338,37 @@ describe("direct links and the policy that allows them", () => {
 });
 
 /**
- * A bucket move should not cost anybody their old links. `withFallback` keeps the
- * retired store in the read path, and the sweep deletes from both so the old one
- * actually empties. Fakes are enough here: the behaviour under test is which store
- * answers, not what is inside it.
+ * One blob layer, several stores behind it.
+ *
+ * A body is written to exactly one store and the row records which, read tries that
+ * store first and then the others, and a delete goes to every store there is. Fakes
+ * are enough for all of it: what is under test is who is asked, in what order, and
+ * what happens when one of them is having a bad day — not what is inside a bucket.
  */
-describe("read-through during a storage migration", () => {
+describe("the blob pool", () => {
 	class FakeStore {
 		readonly reads: string[] = [];
 
 		readonly deletes: string[][] = [];
 
+		readonly puts: Array<{ key: string; options: { size?: number; ttlSeconds?: number } }> = [];
+
+		readonly writes: Array<{ key: string; bytes: number }> = [];
+
 		constructor(
 			readonly name: string,
-			readonly keys: string[],
+			readonly keys: string[] = [],
+			/** Fails every write, the way a namespace over its daily budget does. */
+			readonly broken = false,
+			readonly url?: string,
 		) {}
 
-		keyFor(id: string): string {
-			return `pp/v1/file/${id}`;
+		objectPrefix(): string {
+			return "pp/v1/";
+		}
+
+		keyFor(id: string, kind: string): string {
+			return `pp/v1/${kind}/${id}`;
 		}
 
 		async get(key: string): Promise<{ body: ReadableStream; size: number; httpEtag: string } | null> {
@@ -354,48 +377,312 @@ describe("read-through during a storage migration", () => {
 			return { body: new Blob([this.name]).stream(), size: this.name.length, httpEtag: `"${this.name}"` };
 		}
 
-		async put(): Promise<void> {
-			throw new Error("the fallback store is never written to");
+		async putBytes(
+			key: string,
+			bytes: Uint8Array,
+			options: { size?: number; ttlSeconds?: number } = {},
+		): Promise<void> {
+			if (this.broken) throw new Error(`${this.name} is refusing writes today`);
+			this.writes.push({ key, bytes: bytes.byteLength });
+			this.puts.push({ key, options });
+			if (!this.keys.includes(key)) this.keys.push(key);
+		}
+
+		async publicUrlFor(key: string): Promise<string | null> {
+			return this.url ? `${this.url}/${key}` : null;
 		}
 
 		async delete(keys: string[]): Promise<{ deleted: number; failed: string[] }> {
 			this.deletes.push(keys);
 			return { deleted: keys.length, failed: [] };
 		}
+
+		/** What a cache fill does: a stream, a declared size, and a lifetime. */
+		async put(
+			key: string,
+			value: ReadableStream | ArrayBuffer | Uint8Array | string,
+			options: { size?: number; ttlSeconds?: number } = {},
+		): Promise<void> {
+			if (this.broken) throw new Error(`${this.name} is refusing writes today`);
+			this.puts.push({ key, options });
+			if (value instanceof ReadableStream && !this.keys.includes(key)) this.keys.push(key);
+			if (value instanceof ReadableStream) {
+				// Drained with a reader: workerd refuses `pipeTo(new WritableStream())`
+				// between two unrelated streams, and a copy nobody reads would hang here.
+				const reader = value.getReader();
+				while (!(await reader.read()).done) {
+					/* read to the end */
+				}
+			}
+			if (!this.keys.includes(key)) this.keys.push(key);
+		}
 	}
 
-	it("reads the primary, falls back once, and writes only the primary", async () => {
-		const primary = new FakeStore("new", ["here"]);
-		const legacy = new FakeStore("old", ["there"]);
-		const store = new ReadThroughStore(primary as unknown as BlobStore, legacy as unknown as BlobStore);
+	const member = (name: string, store: FakeStore, readOnly = false) =>
+		poolMember(name as StorageProvider, `${name} binding`, store as unknown as BlobStore, readOnly);
 
-		expect((await store.get("here"))?.httpEtag).toBe('"new"');
-		expect((await store.get("there"))?.httpEtag).toBe('"old"');
-		expect(await store.get("nowhere")).toBeNull();
-		expect(legacy.reads).toEqual(["there", "nowhere"]);
+	const policy = (over: Partial<PoolPolicy> = {}): PoolPolicy => ({ ...DEFAULT_POLICY, ...over });
+
+	it("puts a small body in the namespace and a large one in the bucket", async () => {
+		const bucket = new FakeStore("s3");
+		const namespace = new FakeStore("kv");
+		const pool = new BlobPool([member("s3", bucket), member("kv", namespace)], policy({ kvShareMaxBytes: 256 * 1024 }));
+
+		const small = await pool.place("file", "a", new Uint8Array(1024), { size: 1024 });
+		const large = await pool.place("file", "b", new Uint8Array(300 * 1024), { size: 300 * 1024 });
+
+		expect(small.member.provider).toBe("kv");
+		expect(large.member.provider).toBe("s3");
+		// One copy each, in the store the row will name: this is not a mirror.
+		expect(namespace.writes.map((w) => w.key)).toEqual(["pp/v1/file/a"]);
+		expect(bucket.writes.map((w) => w.key)).toEqual(["pp/v1/file/b"]);
+		expect(small.key).toBe("pp/v1/file/a");
 	});
 
-	it("deletes from both stores so the retired one can drain", async () => {
-		const primary = new FakeStore("new", []);
-		const legacy = new FakeStore("old", ["k1", "k2"]);
-		const store = new ReadThroughStore(primary as unknown as BlobStore, legacy as unknown as BlobStore);
+	it("stops feeding KV once its daily write budget is spent", async () => {
+		const bucket = new FakeStore("s3");
+		const namespace = new FakeStore("kv");
+		const pool = new BlobPool([member("s3", bucket), member("kv", namespace)], policy({ kvWritesPerDay: 1 }));
 
-		const result = await store.delete(["k1", "k2"]);
-		expect(result).toEqual({ deleted: 2, failed: [] });
-		expect(primary.deletes).toEqual([["k1", "k2"]]);
-		expect(legacy.deletes).toEqual([["k1", "k2"]]);
+		expect((await pool.place("file", "a", new Uint8Array(10), { size: 10 })).member.provider).toBe("kv");
+		expect((await pool.place("file", "b", new Uint8Array(10), { size: 10 })).member.provider).toBe("s3");
+		expect(namespace.writes).toHaveLength(1);
+		// The share is reported, because "why is my file in the bucket" should be
+		// answerable without reading this file.
+		expect(pool.share().kv_writes_left).toBe(0);
 	});
 
-	it("is chosen automatically and switched off on request", () => {
-		const withKv = resolveStorage(fake({ ...S3_CONFIGURED, BLOBS: {} }));
-		expect(withKv.provider).toBe("s3");
-		expect(withKv.fallback).toBe("kv");
-		expect(withKv.reason).toContain("reading through kv");
-		expect(resolveStorage(fake({ ...S3_CONFIGURED, BLOBS: {}, STORAGE_FALLBACK: "off" })).fallback).toBeUndefined();
-		// Naming a store that is not bound is not a mistake worth failing a request over.
-		expect(resolveStorage(fake({ ...S3_CONFIGURED, BLOBS: {}, STORAGE_FALLBACK: "r2" })).fallback).toBeUndefined();
-		// And a plain KV deployment has nothing older to read.
-		expect(resolveStorage(fake({ BLOBS: {} })).fallback).toBeUndefined();
+	it("moves the body to the other store when one refuses it, and parks the one that keeps refusing", async () => {
+		const bucket = new FakeStore("s3");
+		const namespace = new FakeStore("kv", [], true);
+		const pool = new BlobPool([member("s3", bucket), member("kv", namespace)], policy({ kvWritesPerDay: 100 }));
+
+		for (let index = 0; index < 4; index += 1) {
+			const placed = await pool.place("file", `f${index}`, new Uint8Array(10), { size: 10 });
+			// The upload never fails: the retry is invisible to the visitor.
+			expect(placed.member.provider).toBe("s3");
+			expect(bucket.writes).toHaveLength(index + 1);
+		}
+
+		const [kv] = pool.status().filter((entry) => entry.provider === "kv");
+		expect(kv?.write_failures).toBe(3);
+		expect(kv?.parked).toBe(true);
+		expect(kv?.last_error).toContain("refusing writes");
+		expect(namespace.writes).toHaveLength(0);
+	});
+
+	it("reads the store the row names, then every other one", async () => {
+		const bucket = new FakeStore("s3", ["pp/v1/file/new"]);
+		const namespace = new FakeStore("kv", ["pp/v1/file/old"]);
+		const pool = new BlobPool([member("s3", bucket), member("kv", namespace)], policy({ kvShareMaxBytes: 0 }));
+
+		expect((await pool.get("pp/v1/file/new", "s3"))?.httpEtag).toBe('"s3"');
+		expect(bucket.reads).toEqual(["pp/v1/file/new"]);
+		expect(namespace.reads).toEqual([]);
+
+		// A row that does not know where its body is: ask until something answers.
+		expect((await pool.get("pp/v1/file/old", null))?.httpEtag).toBe('"kv"');
+		const [kv] = pool.status().filter((entry) => entry.provider === "kv");
+		expect(kv?.fallback_reads).toBe(1);
+		expect(await pool.get("pp/v1/file/gone", null)).toBeNull();
+	});
+
+	it("deletes from every store, including the one being retired", async () => {
+		const bucket = new FakeStore("s3");
+		const draining = new FakeStore("kv", [], true, undefined);
+		const pool = new BlobPool([member("s3", bucket), member("kv", draining, true)], policy({ kvShareMaxBytes: 0 }));
+
+		expect(await pool.delete(["k1", "k2"])).toEqual({ deleted: 2, failed: [] });
+		expect(bucket.deletes).toEqual([["k1", "k2"]]);
+		expect(draining.deletes).toEqual([["k1", "k2"]]);
+	});
+
+	it("only hands out a bucket link when the row says that bucket has the bytes", async () => {
+		const bucket = new FakeStore("s3", [], false, "https://cdn.example/bucket");
+		const namespace = new FakeStore("kv");
+		const draining = new FakeStore("draining", [], true, "https://cdn.example/retired");
+		const pool = new BlobPool(
+			[member("s3", bucket), member("kv", namespace), member("r2", draining, true)],
+			policy({ kvShareMaxBytes: 0 }),
+		);
+
+		// A row that does not know where its body is gets proxied, never redirected to a
+		// guess: a presigned URL for the wrong store is a 404 with extra steps.
+		expect(await pool.publicUrlFor("pp/v1/file/a", null)).toBeNull();
+		// The store the row names answers, and only it.
+		expect(await pool.publicUrlFor("pp/v1/file/a", "s3")).toBe("https://cdn.example/bucket/pp/v1/file/a");
+		expect(await pool.publicUrlFor("pp/v1/file/a", "kv")).toBeNull();
+		// A store being retired is not a link target even if it could produce one.
+		expect(await pool.publicUrlFor("pp/v1/file/a", "r2")).toBeNull();
+	});
+
+	it("serves from the bucket, keeps an expiring copy in the namespace, and stamps the row", async () => {
+		const bucket = new FakeStore("s3", ["pp/v1/file/a"]);
+		const namespace = new FakeStore("kv");
+		const pool = new BlobPool(
+			[member("s3", bucket), member("kv", namespace)],
+			policy({ kvRole: "cache", kvShareMaxBytes: 0, kvCacheMaxBytes: 1024 * 1024, kvWritesPerDay: 5 }),
+		);
+		const tasks: Promise<unknown>[] = [];
+		const defer = { waitUntil: (task: Promise<unknown>) => void tasks.push(task) };
+		const stamped: string[] = [];
+
+		const first = await pool.read("pp/v1/file/a", null, {
+			defer,
+			stamp: async (provider) => void stamped.push(provider),
+		});
+		expect(first?.httpEtag).toBe('"s3"');
+		await Promise.all(tasks);
+
+		expect(namespace.puts.map((entry) => entry.key)).toEqual(["pp/v1/file/a"]);
+		// The copy expires on its own, so a namespace nobody maintains cannot fill up.
+		expect(namespace.puts[0]?.options.ttlSeconds).toBeGreaterThan(0);
+		expect(stamped).toEqual(["kv"]);
+
+		// Next time, the row names the namespace and the bucket is not asked at all.
+		const second = await pool.read("pp/v1/file/a", "kv", { defer });
+		expect(second?.httpEtag).toBe('"kv"');
+		expect(bucket.reads).toHaveLength(1);
+		expect(pool.share().cache_hits).toBe(1);
+		expect(pool.share().cache_fills).toBe(1);
+	});
+
+	it("copies nothing when there is no context left to finish the copy in", async () => {
+		const bucket = new FakeStore("s3", ["pp/v1/file/a"]);
+		const namespace = new FakeStore("kv");
+		const pool = new BlobPool(
+			[member("s3", bucket), member("kv", namespace)],
+			policy({ kvRole: "cache", kvShareMaxBytes: 0 }),
+		);
+
+		const body = await pool.read("pp/v1/file/a", null);
+		expect(body?.httpEtag).toBe('"s3"');
+		expect(namespace.puts).toHaveLength(0);
+	});
+
+	it("leaves a body too large to cache, or one the day has no room for, in the bucket", async () => {
+		const bucket = new FakeStore("s3", ["pp/v1/file/a"]);
+		const oversized = new FakeStore("kv");
+		const pool = new BlobPool(
+			[member("s3", bucket), member("kv", oversized)],
+			policy({ kvRole: "cache", kvShareMaxBytes: 0, kvCacheMaxBytes: 1 }),
+		);
+		const tasks: Promise<unknown>[] = [];
+		await pool.read("pp/v1/file/a", null, { defer: { waitUntil: (t) => void tasks.push(t) } });
+		await Promise.all(tasks);
+		expect(oversized.puts).toHaveLength(0);
+
+		const spent = new FakeStore("kv");
+		const exhausted = new BlobPool(
+			[member("s3", bucket), member("kv", spent)],
+			policy({ kvRole: "cache", kvShareMaxBytes: 0, kvCacheMaxBytes: 1024 * 1024, kvWritesPerDay: 0 }),
+		);
+		await exhausted.read("pp/v1/file/a", null, { defer: { waitUntil: (t) => void tasks.push(t) } });
+		expect(spent.puts).toHaveLength(0);
+		// Free-tier KV allows 1,000 writes a day; the pool is aimed well under it and
+		// stops early rather than discovering the ceiling through failed uploads.
+		expect(exhausted.share().kv_writes_left).toBe(0);
+	});
+
+	it("pools every configured store, and writes to one when asked to", () => {
+		const both = resolveStorage(fake({ ...S3_CONFIGURED, BLOBS: {} }));
+		expect(both.providers).toEqual(["s3", "kv"]);
+		expect(both.mode).toBe("pool");
+		expect(both.reason).toContain("pooled");
+		expect(both.reason).toContain("KV namespace bound as BLOBS");
+		// A bucket and a namespace together means the bucket is the origin, so the
+		// namespace's job is serving reads rather than holding the only copy.
+		expect(both.objects.share().kv_role).toBe("cache");
+		expect(both.reason).toContain("cached in the namespace");
+
+		// `off` is the old shape: one writer, and the retired binding kept readable so
+		// links made before the switch still open while it drains.
+		const one = resolveStorage(fake({ ...S3_CONFIGURED, BLOBS: {}, BLOB_POOL: "off" }));
+		expect(one.mode).toBe("single");
+		expect(one.provider).toBe("s3");
+		expect(one.objects.status().map((entry) => entry.role)).toEqual(["write", "read-only"]);
+
+		// Closing the retired store entirely takes the second writer with it: one knob
+		// has to mean one thing.
+		const alone = resolveStorage(fake({ ...S3_CONFIGURED, BLOBS: {}, STORAGE_FALLBACK: "off" }));
+		expect(alone.providers).toEqual(["s3"]);
+		expect(alone.objects.share().kv_share_bytes).toBe(0);
+		// A store that is not bound is not offered, and not a mistake worth failing for.
+		expect(resolveStorage(fake({ ...S3_CONFIGURED, STORAGE_FALLBACK: "r2" })).providers).toEqual(["s3"]);
+		// A plain KV deployment runs through the same pool machinery with one store in it:
+		// nothing is placed in a read-only binding, and a lone writer is reported as one.
+		const onlyKv = resolveStorage(fake({ BLOBS: {} }));
+		expect(onlyKv.provider).toBe("kv");
+		expect(onlyKv.mode).toBe("single");
+		expect(onlyKv.objects).toBeInstanceOf(BlobPool);
+		// A read-only KV binding never gets a share: nothing may be placed in it.
+		expect(resolveStorage(fake({ ...S3_CONFIGURED, BLOBS: {}, BLOB_POOL: "off" })).objects.share().kv_share_bytes).toBe(
+			0,
+		);
+	});
+
+	it("refuses to invent a backend rather than write to nowhere", () => {
+		expect(() => resolveStorage(fake({ STORAGE_PROVIDER: "s3", BLOBS: {}, BLOB_POOL: "off" }))).toThrow(
+			/pinned but not configured/,
+		);
+	});
+
+	it("records in the row which store took the body", async () => {
+		const big = await createPaste({ content: "y".repeat(testConfig.inlineTextMaxBytes + 64) });
+		expect((await readRow(big.id))?.blob_store).toBe("kv");
+
+		// An inline paste has no body to place, and says so rather than naming a store
+		// that holds nothing.
+		const small = await createPaste({ content: "short" });
+		expect((await readRow(small.id))?.blob_store).toBeNull();
+	});
+
+	it("opens a paste whose row does not know where its bytes are", async () => {
+		const created = await createPaste({ content: "y".repeat(testConfig.inlineTextMaxBytes + 64) });
+		await testEnv.DB.prepare("UPDATE pastes SET blob_store = NULL WHERE id = ?").bind(created.id).run();
+
+		// The body is text, so the raw route is the honest one to ask; the point is that
+		// an unknown placement still resolves.
+		const response = await request(`/raw/${created.id}`);
+		expect(response.status).toBe(200);
+		expect(await response.text()).toContain("yyyy");
+	});
+
+	it("walks every store for orphans, and never deletes what it cannot date", async () => {
+		const now = Date.now();
+		const live = await createPaste({ content: "y".repeat(testConfig.inlineTextMaxBytes + 64) });
+		const deleted: string[] = [];
+		const namespace = {
+			list: async () => ({
+				keys: [
+					// Still pointed at by a row: the listing sees it, the sweep leaves it.
+					{ name: `pp/v1/text/${live.id}`, metadata: { createdAt: now - 6 * 3_600_000 } },
+					// Nobody's, and old enough that no request can still be holding it.
+					{ name: "pp/v1/file/gone", metadata: { createdAt: now - 3 * 3_600_000 } },
+					// An upload from a minute ago.
+					{ name: "pp/v1/file/fresh", metadata: { createdAt: now - 60_000 } },
+					// Stored before the stamp existed, so its age is unknowable.
+					{ name: "pp/v1/file/undated", metadata: null },
+				],
+				list_complete: true,
+			}),
+			get: async () => null,
+			getWithMetadata: async () => ({ value: null, metadata: null }),
+			put: async () => undefined,
+			delete: async (key: string) => void deleted.push(key),
+		};
+
+		const report = await sweepOrphans(fake({ DB: testEnv.DB, BLOBS: namespace }), testConfig, now, {
+			graceMs: 2 * 3_600_000,
+		});
+
+		expect(deleted).toEqual(["pp/v1/file/gone"]);
+		expect(report.removed).toBe(1);
+		expect(report.scanned).toBe(4);
+		expect(report.stores.kv).toEqual({ scanned: 4, removed: 1 });
+		expect(report.skipped).toBe("");
+		// And the live paste is untouched by all of it.
+		expect((await readRow(live.id))?.blob_store).toBe("kv");
 	});
 });
 
@@ -788,12 +1075,13 @@ describe("cron shape", () => {
 	it("reports the mirror through the public config, with no keys in it", async () => {
 		const body = (await (await request("/api/config")).json()) as {
 			supabase: { enabled: boolean; mirror: string; credential: string };
-			storage: { provider: string; fallback: string | null };
+			storage: { provider: string; providers: string[]; mode: string; stores: Array<{ role: string }> };
 		};
 		// The test Worker has neither Supabase var: the honest answer is "off".
 		expect(body.supabase.enabled).toBe(false);
 		expect(body.supabase.mirror).toBe("off");
-		expect(body.storage.fallback).toBeNull();
+		expect(body.storage.providers).toEqual(["kv"]);
+		expect(body.storage.stores.map((entry) => entry.role)).toEqual(["write"]);
 		expect(JSON.stringify(body)).not.toMatch(/key|token|secret/i);
 	});
 });

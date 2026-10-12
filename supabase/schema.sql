@@ -20,6 +20,7 @@ create table if not exists public.pastes (
 	size_bytes        bigint not null default 0,
 	content           text,
 	object_key        text,
+	blob_store        text,
 	password_salt     text,
 	password_verifier text,
 	password_iterations integer,
@@ -34,6 +35,10 @@ create table if not exists public.pastes (
 	consumed_at       bigint,
 	views             bigint not null default 0
 );
+
+-- The D1 migration 0002 adds this column to an existing table; the same change is
+-- made here so a project that was set up before it keeps the two copies identical.
+alter table public.pastes add column if not exists blob_store text;
 
 -- What the sweep and the fallback read need; mirrors the D1 indexes.
 create index if not exists pastes_expires_at_idx on public.pastes (expires_at);

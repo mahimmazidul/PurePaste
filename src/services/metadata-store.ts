@@ -10,6 +10,7 @@ export interface PasteRow {
 	size_bytes: number;
 	content: string | null;
 	object_key: string | null;
+	blob_store: string | null;
 	password_salt: string | null;
 	password_verifier: string | null;
 	password_iterations: number | null;
@@ -36,6 +37,7 @@ export function toRecord(row: PasteRow): PasteRecord {
 		sizeBytes: row.size_bytes,
 		content: row.content,
 		objectKey: row.object_key,
+		blobStore: row.blob_store ?? null,
 		passwordSalt: row.password_salt,
 		passwordVerifier: row.password_verifier,
 		passwordIterations: row.password_iterations,
@@ -52,9 +54,39 @@ export function toRecord(row: PasteRow): PasteRecord {
 	};
 }
 
-const COLUMNS = `id, kind, title, language, filename, content_type, size_bytes, content, object_key,
-	password_salt, password_verifier, password_iterations, password_algo, manage_hash,
-	burn_after_read, encrypted, markdown, redirect_url, created_at, expires_at, consumed_at, views`;
+/**
+ * The one list of columns, so an `INSERT` can never be written with the wrong number
+ * of placeholders again — that failure is a 500 on every create, and it is caught far
+ * more cheaply here than by counting question marks.
+ */
+const COLUMNS = [
+	"id",
+	"kind",
+	"title",
+	"language",
+	"filename",
+	"content_type",
+	"size_bytes",
+	"content",
+	"object_key",
+	"blob_store",
+	"password_salt",
+	"password_verifier",
+	"password_iterations",
+	"password_algo",
+	"manage_hash",
+	"burn_after_read",
+	"encrypted",
+	"markdown",
+	"redirect_url",
+	"created_at",
+	"expires_at",
+	"consumed_at",
+	"views",
+];
+
+const SELECT_LIST = COLUMNS.join(", ");
+const INSERT_VALUES = COLUMNS.map(() => "?").join(", ");
 
 export type InsertOutcome = "created" | "collision";
 
@@ -73,9 +105,7 @@ export class MetadataStore {
 	async insert(record: PasteRecord): Promise<InsertOutcome> {
 		try {
 			await this.db
-				.prepare(
-					`INSERT INTO pastes (${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				)
+				.prepare(`INSERT INTO pastes (${SELECT_LIST}) VALUES (${INSERT_VALUES})`)
 				.bind(
 					record.id,
 					record.kind,
@@ -86,6 +116,7 @@ export class MetadataStore {
 					record.sizeBytes,
 					record.content,
 					record.objectKey,
+					record.blobStore,
 					record.passwordSalt,
 					record.passwordVerifier,
 					record.passwordIterations,
@@ -109,8 +140,17 @@ export class MetadataStore {
 	}
 
 	async findById(id: string): Promise<PasteRecord | null> {
-		const row = await this.db.prepare(`SELECT ${COLUMNS} FROM pastes WHERE id = ?`).bind(id).first<PasteRow>();
+		const row = await this.db.prepare(`SELECT ${SELECT_LIST} FROM pastes WHERE id = ?`).bind(id).first<PasteRow>();
 		return row ? toRecord(row) : null;
+	}
+
+	/**
+	 * Where a body should be read from first. Called after the pool places an object,
+	 * and again when a cached copy turns out to be gone — it is a pointer, not a
+	 * promise: an unknown or stale value only costs one extra read on the next miss.
+	 */
+	async setBlobStore(id: string, provider: string): Promise<void> {
+		await this.db.prepare("UPDATE pastes SET blob_store = ? WHERE id = ?").bind(provider, id).run();
 	}
 
 	async deleteById(id: string): Promise<boolean> {
@@ -128,7 +168,7 @@ export class MetadataStore {
 			.prepare(
 				`UPDATE pastes SET consumed_at = ?
 				 WHERE id = ? AND consumed_at IS NULL AND expires_at > ?
-				 RETURNING ${COLUMNS}`,
+				 RETURNING ${SELECT_LIST}`,
 			)
 			.bind(now, id, now)
 			.all<PasteRow>();

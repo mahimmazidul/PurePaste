@@ -102,6 +102,7 @@ interface SupabaseRow {
 	size_bytes: number | null;
 	content: string | null;
 	object_key: string | null;
+	blob_store?: string | null;
 	password_salt: string | null;
 	password_verifier: string | null;
 	password_iterations: number | null;
@@ -138,6 +139,7 @@ function fromRow(row: SupabaseRow): PasteRecord {
 		sizeBytes: toNum(row.size_bytes),
 		content: row.content,
 		objectKey: row.object_key,
+		blobStore: row.blob_store ?? null,
 		passwordSalt: row.password_salt,
 		passwordVerifier: row.password_verifier,
 		passwordIterations: row.password_iterations === null ? null : toNum(row.password_iterations),
@@ -165,6 +167,7 @@ function toRow(record: PasteRecord): Record<string, unknown> {
 		size_bytes: record.sizeBytes,
 		content: record.content,
 		object_key: record.objectKey,
+		blob_store: record.blobStore,
 		password_salt: record.passwordSalt,
 		password_verifier: record.passwordVerifier,
 		password_iterations: record.passwordIterations,

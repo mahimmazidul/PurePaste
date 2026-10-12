@@ -11,6 +11,8 @@ export interface PasteRecord {
 	sizeBytes: number;
 	content: string | null;
 	objectKey: string | null;
+	/** The store that holds `objectKey`: "r2" | "s3" | "kv", or null when unknown. */
+	blobStore: string | null;
 	passwordSalt: string | null;
 	passwordVerifier: string | null;
 	passwordIterations: number | null;

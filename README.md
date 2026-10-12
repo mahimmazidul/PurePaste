@@ -119,7 +119,7 @@ npx wrangler r2 bucket create purepaste-blobs
 
 The bucket name already in `wrangler.jsonc` is `purepaste-blobs`; if you used another name, change it there too. Add `--location weur` (or another region hint) if you would like the data parked nearer your readers.
 
-**Cannot activate R2 without a card?** There are two other answers, and this deployment uses the second one.
+**Cannot activate R2 without a card?** There are two other answers, and this deployment uses the second one — with the namespace kept as a read cache in front of the bucket, so the two free tiers work as one layer instead of one waiting to be retired.
 
 - `npx wrangler kv namespace create BLOBS` plus the binding already in `wrangler.jsonc` is enough — the Worker will use KV, at 25 MiB per file and inside its operation counts.
 - An S3 bucket needs no wrangler binding at all: three vars and two secrets.
@@ -134,7 +134,7 @@ npx wrangler secret put S3_ACCESS_KEY_ID
 npx wrangler secret put S3_SECRET_ACCESS_KEY
 ```
 
-A complete `S3_*` set wins over KV automatically, so nothing else changes; `STORAGE_FALLBACK=auto` then keeps the old KV namespace readable, which is what let this instance move to B2 without invalidating a single existing link. See [Blob storage](#blob-storage-which-bucket-and-why).
+A complete `S3_*` set wins over KV automatically, so nothing else changes. Bind both and the pool uses both: existing objects stay readable in the namespace, new bodies go to the bucket, and reads that keep getting served from KV end up with a copy there. That is what let this instance move to B2 without invalidating a single existing link. See [Blob storage](#blob-storage-which-bucket-and-why).
 
 ### 3. Apply the schema
 
@@ -208,18 +208,26 @@ Cloudflare creates the DNS record and certificate for you. Nothing in the applic
 
 ## Blob storage: which bucket, and why
 
-Text, options, counters and expiry always live in D1 — that is the database of record whatever holds the files. Only the large bodies are pluggable, and one function decides: `src/services/storage-provider.ts`.
+Text, options, counters and expiry always live in D1 — that is the database of record whatever holds the files. Only the large bodies are pluggable, and one object decides where they go: `BlobPool` in `src/services/storage-provider.ts`.
 
-1. If `STORAGE_PROVIDER` is set, it pins the backend (`kv`, `r2`, `s3`) and a missing configuration for it is an error, not a fallback. A typo then surfaces as one clear message on the next upload instead of bytes quietly landing in the wrong place.
-2. Otherwise the first complete option wins, in this order: an R2 bucket bound as `BUCKET`; a complete `S3_*` set; a KV namespace bound as `BLOBS`.
+The pool is not a primary with a spare. Every configured store is a member, one of them takes each body, the D1 row records which (`pastes.blob_store`), reads start there and fall through to the others, and **a delete goes to every store in the pool** — which is why the hourly sweep needs nobody to remember anything. Two shapes:
 
-`STORAGE_FALLBACK` then decides what happens to the store that is _not_ primary. It is what makes a migration uneventful: with `auto` (the default) reads try the primary and fall through to the old namespace, writes go only to the new one, and deletes go to both, so links made before the switch keep working while the retired store drains. `off` closes the door immediately; a named provider pins which store is read through.
+- `BLOB_KV=share` — bodies up to `BLOB_KV_SHARE_MAX_BYTES` (256 KiB) are written to the namespace, everything bigger to the bucket. Both stores hold part of the data and neither is a copy of the other.
+- `BLOB_KV=cache` (what an instance with a bucket and a namespace gets by default) — the bucket is the origin, so an upload is readable the instant its row exists, and the bodies people actually open are copied into the namespace behind the response with a TTL on the copy. The next read is answered at an edge near the visitor, and the row is stamped `kv` so it keeps being. A cache that is empty, evicted or half-written costs one bucket read; it can never cost a file.
 
-`GET /api/config` answers `storage: { provider, reason, fallback, direct_links }` — the quickest way to confirm what a deploy is actually using without reading any secret.
+Three more settings decide the rest, and none of them is a judgement call the code makes silently:
 
-What holds regardless of the choice: keys are `pp/v1/<kind>/<id>`; the D1 row stays authoritative for filename and content type; reads, burns and the hourly sweep go through the same `BlobStore` contract, which the tests exercise against a stand-in store so a new backend cannot drift out of the purge.
+| Value                         | Effect                                                                                                                                                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `STORAGE_PROVIDER=kv\|r2\|s3` | Pins one store. A pin that is not configured is an error rather than a quiet downgrade, so a typo surfaces as one clear message on the next upload instead of bytes landing somewhere the sweep never looks. |
+| `BLOB_POOL=off`               | One writer — the first complete store — and every other binding kept read-only. This is the shape to use during a migration you want to watch.                                                               |
+| `STORAGE_FALLBACK=off`        | No other store is involved at all: no read-through, no cache, no share.                                                                                                                                      |
 
-### Workers KV — the floor, and what this fork fell back to
+`GET /api/config` answers `storage: { provider, providers, mode, reason, direct_links, stores, share }`, where `stores` lists each member with its writes, failures, whether it is parked and whether it takes writes or only reads, and `share` reports the KV role, the byte caps and how much of today's write budget is left. It is the quickest way to confirm what a deploy is doing without reading a secret.
+
+What holds regardless of the choice: keys are `pp/v1/<kind>/<id>` in every store, so one row can point at a body without naming a bucket in its key; the D1 row stays authoritative for filename and content type; reads, burns and the hourly sweep all go through the same `BlobStore` contract, which the tests exercise against stand-in stores so a new backend cannot drift out of the purge.
+
+### Workers KV — the second store, and what this fork ran on first
 
 Activating R2 requires a payment method on file even for free-tier usage, so this deployment started on a KV namespace (`BLOBS`) and still binds one: it is the read-through store for every paste made before the bucket existed. Differences from R2, absorbed in `src/services/object-store.ts`:
 
@@ -227,7 +235,7 @@ Activating R2 requires a payment method on file even for free-tier usage, so thi
 - Values cap at 25 MiB, so `FILE_MAX_BYTES` above that is a bucket-only setting; a KV store refuses the upload with a 413 rather than failing inside KV after the row exists. The shipped default is 25 MiB, which is exactly the ceiling.
 - There is no bulk delete, so the sweep removes keys one at a time inside its existing batch bounds.
 - No HEAD and no native etag, so size and a generated etag ride in the value metadata (1 KiB budget).
-- No listing timestamps, so orphan objects in KV are deliberately not swept; the free tier's 1k lists a day makes a daily audit worse than the bytes it would reclaim.
+- Values carry their own metadata, which is where `createdAt` comes from: it is what lets the daily orphan pass tell "left behind by a failed request" from "written nine seconds ago", and it is the reason KV is swept too rather than exempt.
 
 Free tier: 1 GB stored, 100k reads a day, 1k each of writes, deletes and lists. The operation counts, not the gigabytes, are what a busy instance runs out of.
 
@@ -313,6 +321,7 @@ The free tiers are tight in different places, so the levers differ. What follows
 - **Never re-read what you already have.** `GET /p/:id/media` answers with an `ETag` and honours `If-None-Match` with a `304`, so a refresh of a viewer page costs a header, not the file.
 - **Small text never touches the object store at all.** Under `INLINE_TEXT_MAX_BYTES` (64 KiB) the body lives in the D1 row, which is the cheapest read on the platform.
 - **Edge-cache the public ones, if you want.** `MEDIA_CACHE_SECONDS` sets `Cache-Control: public, max-age, immutable` on media for pastes that are unencrypted, unlocked and not burn-after-reading — 0 (the default) means every response is `no-store`. Cloudflare does not honour a long `max-age` on a Worker response by itself: add a Cache Rule for the path `/p/*/media` (or set Edge Cache TTL) or the header is advisory only.
+- **Let the namespace answer the repeats.** In `cache` mode a body that is being read is copied into KV behind the response, and a KV read is one operation against a namespace sitting in the same edge location as the visitor, rather than a GET to a bucket in one region. Reads of a hot file stop costing bucket requests entirely, and the copy expires by itself (`BLOB_KV_CACHE_TTL_SECONDS`) if it stops being read.
 - **Skip the Worker for the bytes, when it is safe.** `STORAGE_DIRECT_LINKS=on` with `S3_PUBLIC_BASE` makes `GET /p/:id/media` answer `302` to the bucket for images, video and audio — the file then crosses the CDN and never enters an isolate, which is the single biggest saving for request quota and CPU. It is refused for anything that could be opened as a top-level page, so a PDF or an HTML upload is never redirected; the CSP only ever names the exact origin you configured. Without a public base, an S3 store hands out a presigned GET instead: same bandwidth saving, still one signed request per file.
 - **Keep the payload small at the source.** `FILE_MAX_BYTES` (25 MiB shipped, because that is what a KV value can hold) is a storage limit, not a courtesy; the honest way to raise throughput on a free plan is to lower it, and the honest way to raise the ceiling is to move the bytes to a bucket.
 
@@ -328,34 +337,40 @@ The free tiers are tight in different places, so the levers differ. What follows
 
 Everything is set in the `vars` block of `wrangler.jsonc` and read through `src/config.ts`. Values are clamped to a sane range, so a typo cannot produce a nonsense limit; anything unparseable falls back to the default shown here.
 
-| Variable                    | Default             | Range                  | What it does                                                                                                                                 |
-| --------------------------- | ------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MAX_TTL_SECONDS`           | `2592000` (30 days) | 60 – 2592000           | Ceiling for every paste. The application never allows more than 30 days, whatever this says.                                                 |
-| `DEFAULT_TTL_SECONDS`       | `604800` (7 days)   | 60 – max               | What "Expires" defaults to in the editor.                                                                                                    |
-| `INLINE_TEXT_MAX_BYTES`     | `65536`             | 1 KiB – 1 MiB          | Above this, text goes to the object store rather than staying in the D1 row.                                                                 |
-| `TEXT_MAX_BYTES`            | `10485760` (10 MiB) | ≥ inline – 100 MiB     | Largest paste.                                                                                                                               |
-| `FILE_MAX_BYTES`            | `26214400` (25 MiB) | 1 KiB – 100 MiB        | Largest upload.                                                                                                                              |
-| `PASSWORD_ITERATIONS`       | `210000`            | 100000 – 1000000       | PBKDF2 rounds the _browser_ uses when creating a password.                                                                                   |
-| `UNLOCK_COOKIE_TTL_SECONDS` | `1800`              | 60 – 86400             | How long an unlocked paste stays unlocked in that browser.                                                                                   |
-| `FEATURE_REDIRECT`          | `on`                | –                      | Short-link mode. `off` removes the form and refuses new links.                                                                               |
-| `FEATURE_VIEW_COUNTING`     | `off`               | –                      | Counts reads. Off means reads perform no writes at all.                                                                                      |
-| `FEATURE_TURNSTILE`         | `off`               | –                      | Adds Cloudflare Turnstile to the create form.                                                                                                |
-| `MEDIA_CACHE_SECONDS`       | `0`                 | 0 – 31536000           | `max-age` on media responses for public, unlocked, non-burning pastes. 0 keeps everything `no-store`.                                        |
-| `STORAGE_PROVIDER`          | unset (auto)        | kv / r2 / s3           | Pins the blob backend. Unset means the precedence in [Blob storage](#blob-storage-which-bucket-and-why).                                     |
-| `S3_ENDPOINT`               | unset               | –                      | S3-compatible endpoint: B2, Supabase Storage, MinIO. With the bucket and both keys, this backend wins over KV.                               |
-| `S3_BUCKET`, `S3_REGION`    | unset, `auto`       | –                      | Bucket name and region for the signature.                                                                                                    |
-| `S3_PREFIX`                 | `pp/v1`             | –                      | Key prefix; bump it to move to a fresh layout in the same bucket.                                                                            |
-| `S3_VIRTUAL_HOST_STYLE`     | `off`               | –                      | `on` addresses `<bucket>.<host>`, which Supabase's S3 endpoint requires.                                                                     |
-| `S3_PUBLIC_BASE`            | unset               | –                      | Public base for that bucket. With `STORAGE_DIRECT_LINKS=on` it becomes the `302` target.                                                     |
-| `STORAGE_DIRECT_LINKS`      | `off`               | –                      | Hand images, video and audio straight from the bucket instead of streaming them here.                                                        |
-| `S3_PURGE_VERSIONS`         | `on`                | –                      | Delete every object version after the object itself, so a versioned bucket really shrinks. See [B2](#backblaze-b2--what-this-fork-runs-now). |
-| `STORAGE_FALLBACK`          | `auto`              | `off`, a provider name | Read through to the store that is not primary, so a migration does not orphan old links. Deletes go to both.                                 |
-| `SUPABASE_URL`              | unset               | –                      | Project URL for the runtime mirror. Needs a key before anything is constructed.                                                              |
-| `SUPABASE_TABLE`            | `pastes`            | –                      | Table name, if `pastes` collides with something in your project.                                                                             |
-| `SUPABASE_MIRROR`           | `auto`              | `on` / `off`           | `auto` mirrors when a `service_role` key is present; `on` without one is a boot error.                                                       |
-| `SUPABASE_KEEPALIVE`        | `on`                | –                      | The hourly call that stops a free project from pausing. `off` if you pay for the project.                                                    |
-| `CLEANUP_BATCH_SIZE`        | `100`               | 1 – 1000               | Rows per sweep step.                                                                                                                         |
-| `CLEANUP_MAX_BATCHES`       | `5`                 | 1 – 20                 | Steps per hourly run, so a sweep is always bounded.                                                                                          |
+| Variable                    | Default             | Range                     | What it does                                                                                                                                           |
+| --------------------------- | ------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `MAX_TTL_SECONDS`           | `2592000` (30 days) | 60 – 2592000              | Ceiling for every paste. The application never allows more than 30 days, whatever this says.                                                           |
+| `DEFAULT_TTL_SECONDS`       | `604800` (7 days)   | 60 – max                  | What "Expires" defaults to in the editor.                                                                                                              |
+| `INLINE_TEXT_MAX_BYTES`     | `65536`             | 1 KiB – 1 MiB             | Above this, text goes to the object store rather than staying in the D1 row.                                                                           |
+| `TEXT_MAX_BYTES`            | `10485760` (10 MiB) | ≥ inline – 100 MiB        | Largest paste.                                                                                                                                         |
+| `FILE_MAX_BYTES`            | `26214400` (25 MiB) | 1 KiB – 100 MiB           | Largest upload.                                                                                                                                        |
+| `PASSWORD_ITERATIONS`       | `210000`            | 100000 – 1000000          | PBKDF2 rounds the _browser_ uses when creating a password.                                                                                             |
+| `UNLOCK_COOKIE_TTL_SECONDS` | `1800`              | 60 – 86400                | How long an unlocked paste stays unlocked in that browser.                                                                                             |
+| `FEATURE_REDIRECT`          | `on`                | –                         | Short-link mode. `off` removes the form and refuses new links.                                                                                         |
+| `FEATURE_VIEW_COUNTING`     | `off`               | –                         | Counts reads. Off means reads perform no writes at all.                                                                                                |
+| `FEATURE_TURNSTILE`         | `off`               | –                         | Adds Cloudflare Turnstile to the create form.                                                                                                          |
+| `MEDIA_CACHE_SECONDS`       | `0`                 | 0 – 31536000              | `max-age` on media responses for public, unlocked, non-burning pastes. 0 keeps everything `no-store`.                                                  |
+| `STORAGE_PROVIDER`          | unset (auto)        | kv / r2 / s3              | Pins the blob backend. Unset means the precedence in [Blob storage](#blob-storage-which-bucket-and-why).                                               |
+| `S3_ENDPOINT`               | unset               | –                         | S3-compatible endpoint: B2, Supabase Storage, MinIO. With the bucket and both keys, this backend wins over KV.                                         |
+| `S3_BUCKET`, `S3_REGION`    | unset, `auto`       | –                         | Bucket name and region for the signature.                                                                                                              |
+| `S3_PREFIX`                 | `pp/v1`             | –                         | Key prefix; bump it to move to a fresh layout in the same bucket.                                                                                      |
+| `S3_VIRTUAL_HOST_STYLE`     | `off`               | –                         | `on` addresses `<bucket>.<host>`, which Supabase's S3 endpoint requires.                                                                               |
+| `S3_PUBLIC_BASE`            | unset               | –                         | Public base for that bucket. With `STORAGE_DIRECT_LINKS=on` it becomes the `302` target.                                                               |
+| `STORAGE_DIRECT_LINKS`      | `off`               | –                         | Hand images, video and audio straight from the bucket instead of streaming them here.                                                                  |
+| `S3_PURGE_VERSIONS`         | `on`                | –                         | Delete every object version after the object itself, so a versioned bucket really shrinks. See [B2](#backblaze-b2--what-this-fork-runs-now).           |
+| `STORAGE_FALLBACK`          | `auto`              | `off`, a provider name    | Read through to the store that is not primary, so a migration does not orphan old links. Deletes go to both. `off` also closes the KV share and cache. |
+| `BLOB_POOL`                 | `on`                | `off`                     | `off` leaves the first complete store as the only writer and everything else read-only.                                                                |
+| `BLOB_KV`                   | `auto`              | `off` / `share` / `cache` | What the namespace does: `auto` is `cache` when a bucket takes the writes, `share` when KV is the only store.                                          |
+| `BLOB_KV_SHARE_MAX_BYTES`   | `262144` (256 KiB)  | 0 – 25 MiB                | `share`: largest body written to KV instead of the bucket. `0` disables the share.                                                                     |
+| `BLOB_KV_CACHE_MAX_BYTES`   | `4194304` (4 MiB)   | 0 – 25 MiB                | `cache`: largest body copied into KV on a read. `0` disables the cache.                                                                                |
+| `BLOB_KV_CACHE_TTL_SECONDS` | `259200` (3 days)   | 60 – 2592000              | `cache`: how long a copy lives on its own, whatever the sweep does about it.                                                                           |
+| `BLOB_KV_WRITES_PER_DAY`    | `600`               | 0 – 1000                  | KV writes per UTC day across shares and cache fills. KV's free tier allows 1,000; the pool stops short of it and the bucket takes the rest.            |     |
+| `SUPABASE_URL`              | unset               | –                         | Project URL for the runtime mirror. Needs a key before anything is constructed.                                                                        |
+| `SUPABASE_TABLE`            | `pastes`            | –                         | Table name, if `pastes` collides with something in your project.                                                                                       |
+| `SUPABASE_MIRROR`           | `auto`              | `on` / `off`              | `auto` mirrors when a `service_role` key is present; `on` without one is a boot error.                                                                 |
+| `SUPABASE_KEEPALIVE`        | `on`                | –                         | The hourly call that stops a free project from pausing. `off` if you pay for the project.                                                              |
+| `CLEANUP_BATCH_SIZE`        | `100`               | 1 – 1000                  | Rows per sweep step.                                                                                                                                   |
+| `CLEANUP_MAX_BATCHES`       | `5`                 | 1 – 20                    | Steps per hourly run, so a sweep is always bounded.                                                                                                    |
 
 **Secrets** (never in `wrangler.jsonc`, never in the repository):
 
@@ -614,11 +629,11 @@ The cron trigger in `wrangler.jsonc` runs `17 * * * *` — hourly at seventeen p
 3. **Tends the mirror**, if one is configured: the keep-alive call, then the same expiry rule against Supabase (`purgeExpired`, same batch bounds).
 4. Steps 1–3 repeat up to `CLEANUP_MAX_BATCHES` times, then stop. The run is always bounded, so a large backlog is cleared over several hours rather than in one unbounded loop.
 
-Once a day, in the 04:00 UTC run, there is a fifth step: `sweepOrphans` lists the bucket and deletes objects no row points at, leaving anything younger than two hours alone in case it belongs to a request still in flight. That is the only step that lists, which is why it is daily rather than hourly — an hourly full listing of a bucket is a lot of requests to find something that should not exist. KV is skipped by design (no timestamps, and a listing budget of 1k a day).
+Once a day, in the 04:00 UTC run, there is a fifth step: `sweepOrphans` walks **every store in the pool** — bucket, R2, namespace — and deletes objects no row points at, leaving anything younger than two hours alone in case it belongs to a request still in flight. That is the only step that lists, which is why it is daily rather than hourly: an hourly listing of a whole bucket is a lot of requests to find something that should not exist. A key whose age cannot be established is skipped rather than guessed, which is why KV values carry a `createdAt` stamp in their own metadata; entries written before that stamp existed are left for a later day.
 
 Every step is idempotent and partial-failure safe: objects are removed before rows, a failed object delete leaves the row in place for the next run, and running the sweep twice in a row changes nothing. Expired pastes are unreachable whether or not the sweep has caught up, because reads check expiry themselves.
 
-The sweep talks to whichever store the backend decided on, so a bucket that was written to before this code existed is purged exactly like one that is not — including every _version_ of an object on a versioned bucket, which is the part a plain `DELETE` does not do and the reason a free 10 GB bucket stays 10 GB free (`S3_PURGE_VERSIONS`).
+The sweep talks to the pool rather than to one store: a delete is issued to every member, so a body written before the bucket existed, or a cache copy that outlived its row, is removed by the same run that removes the live object — including every _version_ of an object on a versioned bucket, which is the part a plain `DELETE` does not do and the reason a free 10 GB bucket stays 10 GB free (`S3_PURGE_VERSIONS`). Nothing in retention depends on remembering where a file went, and that is the whole point of the shape.
 
 To test it locally, or to force a sweep in production, see [Getting started](#5-develop) for the local trigger. In production, `npx wrangler tail` shows each run's summary line — `{ cron, supabase, supabaseDetail, mirrorRowsRemoved, orphans, ... }` — which is also where you would look to confirm the keep-alive is landing.
 
@@ -631,7 +646,7 @@ PurePaste is designed to sit comfortably inside Cloudflare's free tier.
 - **Workers Free:** 100,000 requests per day and **10 ms of CPU per request**. The application does no expensive work in a request — no server-side key derivation, no full-body buffering beyond the limits above, no background writes on reads while view counting is off.
 - **D1 Free:** 5 million rows read and 100,000 rows written per day, 5 GB stored. A paste is one insert and one or two indexed reads. **Turning view counting on converts every read into a write**, which is why it is off by default and why `/api/config` reports the setting.
 - **R2 Free:** 10 GB-month storage, 1 million Class A operations, 10 million Class B operations per month, and no egress charge ever. Deletes are free operations, so cleanup costs nothing.
-- **KV Free:** 1 GB stored and 100k reads a day, but only **1k writes, deletes and lists per day** — the sweep's per-key deletes are the ones to watch.
+- **KV Free:** 1 GB stored and 100k reads a day, but only **1k writes, deletes and lists per day** — which is why the pool caps its own namespace use (`BLOB_KV_WRITES_PER_DAY`, 600 by default) and lets the bucket absorb whatever will not fit, rather than discovering the ceiling through a failed upload.
 - **Backblaze B2 Free:** 10 GB stored, egress free up to three times average stored data, and unmetered when the bucket sits behind Cloudflare. A bucket is a plain S3 target here: `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION` and two secrets. **This is what the live deployment uses.** A versioned bucket only shrinks when the versions go too, so `S3_PURGE_VERSIONS` is on by default; a lifecycle rule is the alternative.
 - **Supabase Free:** one 500 MB database and 1 GB of file storage, and **a project that sees no traffic for seven days is paused** — a cold start or a refusal for the next visitor. The hourly keep-alive call exists for that reason; read [Supabase](#supabase-a-runtime-mirror-not-a-backup) before turning the mirror on.
 - **Rate limiting** uses the rate limiting binding (Wrangler 4.36+, available on both plans). Counters are per Cloudflare location rather than global, so the honest description is "close enough", not a guarantee.

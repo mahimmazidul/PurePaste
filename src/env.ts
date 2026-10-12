@@ -63,6 +63,27 @@ export interface AppEnv {
 	 */
 	STORAGE_DIRECT_LINKS?: string;
 	/**
+	 * `on` (the default) lets every configured blob store take writes: a bucket and a
+	 * KV namespace as one layer, rather than one of them and a read-through. `off`
+	 * keeps the first complete store as the only writer.
+	 */
+	BLOB_POOL?: string;
+	/**
+	 * What the KV namespace does when a bucket is also bound: `off` (bucket only),
+	 * `share` (small bodies are written to KV instead of the bucket) or `cache` (every
+	 * body lives in the bucket, and the ones people read are copied into the
+	 * namespace, which is where they are served from afterwards). `auto` is `cache`
+	 * with a bucket in play and `share` when KV is the only store.
+	 */
+	BLOB_KV?: string;
+	/** `share`: largest body written to KV rather than to the bucket. */
+	BLOB_KV_SHARE_MAX_BYTES?: string;
+	/** `cache`: largest body copied into KV on a read, and how long the copy lives. */
+	BLOB_KV_CACHE_MAX_BYTES?: string;
+	BLOB_KV_CACHE_TTL_SECONDS?: string;
+	/** KV writes per UTC day the pool will attempt, before the bucket takes everything. */
+	BLOB_KV_WRITES_PER_DAY?: string;
+	/**
 	 * Supabase, used at runtime rather than as a backup: every write is mirrored and
 	 * reads fall back to it when D1 is unhappy. Anon key alone = keep-alive only;
 	 * the service key turns the mirror on. See ./services/supabase-store.

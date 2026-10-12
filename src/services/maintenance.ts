@@ -1,6 +1,6 @@
 import type { Config } from "../config";
 import type { AppEnv } from "../env";
-import type { BlobStore } from "./object-store";
+import type { BlobPool } from "./storage-provider";
 import { CONSUMED_GRACE_MS } from "./cleanup";
 import { resolveStorage } from "./storage-provider";
 import { supabaseStore } from "./supabase-store";
@@ -9,15 +9,6 @@ import { supabaseStore } from "./supabase-store";
  * The other two things the hourly cron does, kept out of `sweep` because they are
  * aimed at services outside this Worker and must never hold it up.
  */
-
-interface ListableStore {
-	objectPrefix(): string;
-	list(
-		prefix: string,
-		token?: string,
-	): Promise<{ keys: Array<{ key: string; lastModified: number }>; next: string | null }>;
-	delete(keys: string[]): Promise<{ deleted: number; failed: string[] }>;
-}
 
 export interface MaintenanceReport {
 	supabase: "off" | "awake" | "unreachable" | "purged";
@@ -88,58 +79,76 @@ export async function sweepOrphans(
 	config: Config,
 	now = Date.now(),
 	options: { graceMs?: number; maxPages?: number } = {},
-): Promise<{ scanned: number; removed: number; skipped: string }> {
+): Promise<{
+	scanned: number;
+	removed: number;
+	skipped: string;
+	stores: Record<string, { scanned: number; removed: number }>;
+}> {
 	// Resolve failure is a skip, not a crash: an instance whose storage is
 	// misconfigured has bigger things to fix than an orphan sweep, and the cron has
 	// already logged that one.
-	let provider: string;
-	let primary: BlobStore;
+	let pool: BlobPool;
 	try {
-		({ provider, primary } = resolveStorage(env));
+		pool = resolveStorage(env).objects;
 	} catch (error) {
-		return { scanned: 0, removed: 0, skipped: error instanceof Error ? error.message : String(error) };
+		return { scanned: 0, removed: 0, skipped: error instanceof Error ? error.message : String(error), stores: {} };
 	}
-	if (provider !== "s3") return { scanned: 0, removed: 0, skipped: `provider is ${provider}` };
 
-	// Not every S3-shaped store can list, and the orphan pass needs listing: an
-	// endpoint without ListObjectsV2 is a bucket you should sweep with a lifecycle
-	// rule instead, so say which one that is rather than guessing.
-	const candidate = primary as unknown as ListableStore;
-	const store =
-		typeof candidate?.list === "function" && typeof candidate.objectPrefix === "function" ? candidate : null;
-	if (!store) return { scanned: 0, removed: 0, skipped: "store cannot list" };
+	const listables = pool.listables();
+	if (listables.length === 0) {
+		return { scanned: 0, removed: 0, skipped: "no store in this pool can list", stores: {} };
+	}
 
 	const graceMs = options.graceMs ?? 2 * 60 * 60 * 1000;
 	const maxPages = options.maxPages ?? 5;
-	const prefix = store.objectPrefix();
 	const cutoff = now - graceMs;
+	const report = {
+		scanned: 0,
+		removed: 0,
+		skipped: "",
+		stores: {} as Record<string, { scanned: number; removed: number }>,
+	};
 
-	let token: string | undefined;
-	let scanned = 0;
-	let removed = 0;
+	// Every store gets walked, not just the one that takes writes: an object nobody
+	// points at costs the same in a retired namespace as it does in a bucket, and
+	// "which store had it" is exactly the question a row may no longer be able to answer.
+	for (const { provider, store, prefix } of listables) {
+		let token: string | undefined;
+		let scanned = 0;
+		let removed = 0;
 
-	for (let page = 0; page < maxPages; page += 1) {
-		const listing = await store.list(prefix, token);
-		const stale = listing.keys.filter((entry) => entry.lastModified < cutoff).map((entry) => entry.key);
-		scanned += listing.keys.length;
+		for (let page = 0; page < maxPages; page += 1) {
+			const listing = await store.list!(prefix, token);
+			// A key with no known age is left alone. The sweep will meet it again tomorrow,
+			// and an object written seconds ago is somebody's upload still in flight.
+			const stale = listing.keys
+				.filter((entry) => entry.lastModified !== null && entry.lastModified < cutoff)
+				.map((entry) => entry.key);
+			scanned += listing.keys.length;
 
-		if (stale.length > 0) {
-			// One query, not one per key: the row set for these ids either exists or
-			// does not, and D1 answers in a single round trip.
-			const placeholders = stale.map(() => "?").join(", ");
-			const rows = await env.DB.prepare(`SELECT object_key FROM pastes WHERE object_key IN (${placeholders})`)
-				.bind(...stale)
-				.all<{ object_key: string }>();
-			const referenced = new Set((rows.results ?? []).map((row) => row.object_key));
-			const orphans = stale.filter((key) => !referenced.has(key));
-			if (orphans.length > 0) removed += (await store.delete(orphans)).deleted;
+			if (stale.length > 0) {
+				// One query, not one per key: the row set for these ids either exists or
+				// does not, and D1 answers in a single round trip.
+				const placeholders = stale.map(() => "?").join(", ");
+				const rows = await env.DB.prepare(`SELECT object_key FROM pastes WHERE object_key IN (${placeholders})`)
+					.bind(...stale)
+					.all<{ object_key: string }>();
+				const referenced = new Set((rows.results ?? []).map((row) => row.object_key));
+				const orphans = stale.filter((key) => !referenced.has(key));
+				if (orphans.length > 0) removed += (await store.delete(orphans)).deleted;
+			}
+
+			if (!listing.next) break;
+			token = listing.next ?? undefined;
 		}
 
-		if (!listing.next) break;
-		token = listing.next;
+		report.stores[provider] = { scanned, removed };
+		report.scanned += scanned;
+		report.removed += removed;
 	}
 
-	return { scanned, removed, skipped: "" };
+	return report;
 }
 
 /**

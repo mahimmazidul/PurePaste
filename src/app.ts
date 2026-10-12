@@ -257,17 +257,20 @@ function titleForError(error: AppError): string {
 	}
 }
 
-/** Non-sensitive storage diagnostics for `GET /api/config`. */
+/** Non-sensitive storage diagnostics for `GET /api/config`: which stores are in the pool, what they have done, and nothing about their contents. */
 function storageReport(env: AppEnv, config: Config) {
 	try {
 		const resolved = resolveStorage(env);
 		return {
 			provider: resolved.provider,
+			providers: resolved.providers,
+			mode: resolved.mode,
 			reason: resolved.reason,
-			fallback: resolved.fallback ?? null,
 			direct_links: Boolean(config.storageDirectOrigin),
+			stores: resolved.objects.status(),
+			share: resolved.objects.share(),
 		};
 	} catch (error) {
-		return { provider: "none", reason: (error as Error).message, direct_links: false };
+		return { provider: "none", providers: [], mode: "none", reason: (error as Error).message, direct_links: false };
 	}
 }

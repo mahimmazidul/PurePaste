@@ -9,6 +9,19 @@ export interface PutOptions {
 	size?: number;
 	contentType?: string;
 	filename?: string;
+	/**
+	 * The etag to keep, when the caller knows one. KV has no native etag and invents a
+	 * uuid by default, which is right for a body that only ever lives there and wrong
+	 * for a copy: a file that changes identity when it is cached would make every
+	 * visitor's `If-None-Match` miss. Only the KV store looks at this.
+	 */
+	etag?: string;
+	/**
+	 * Seconds after which the value disappears by itself. Only KV understands this —
+	 * it is what makes a copy in the namespace safe to lose, which is the whole
+	 * difference between a cache and a second copy of the truth.
+	 */
+	ttlSeconds?: number;
 }
 
 /**
@@ -34,8 +47,8 @@ export interface BlobBody {
  *                       (R2 activation requires a payment method even for
  *                       free-tier usage; KV needs none).
  *
- * `./storage-provider` decides which of these is live (R2, an S3-compatible
- * bucket or KV), so switching is configuration, not a code edit.
+ * `./storage-provider` decides which of these are live and how a body is routed
+ * between them, so switching is configuration, not a code edit.
  * The R2 and KV shapes below stay the ones every other backend is modelled on.
  */
 export interface BlobStore {
@@ -52,6 +65,20 @@ export interface BlobStore {
 	 * only option). R2 and KV return null: their reads already cost nothing extra.
 	 */
 	publicUrlFor?(key: string): Promise<string | null>;
+	/**
+	 * One page of keys with their ages, when the backend can say. Optional because
+	 * not every store can: the orphan pass asks, and a store that cannot answer is
+	 * skipped rather than swept blind.
+	 */
+	list?(
+		prefix: string,
+		token?: string,
+	): Promise<{ keys: Array<{ key: string; lastModified: number | null }>; next: string | null }>;
+	/**
+	 * The prefix a listing starts from. Present on the stores the orphan pass can
+	 * walk; `keyFor` composes it with a kind and an id.
+	 */
+	objectPrefix?(): string;
 }
 
 /**
@@ -66,6 +93,10 @@ export class ObjectStore implements BlobStore {
 		private readonly bucket: R2Bucket,
 		private readonly prefix = "pp/v1",
 	) {}
+
+	objectPrefix(): string {
+		return `${this.prefix}/`;
+	}
 
 	keyFor(id: string, kind: ObjectKind): string {
 		return `${this.prefix}/${kind}/${id}`;
@@ -122,6 +153,21 @@ export class ObjectStore implements BlobStore {
 		return this.bucket.head(key);
 	}
 
+	/** Same shape as the other stores, for the daily orphan pass. */
+	async list(
+		prefix: string,
+		token?: string,
+	): Promise<{ keys: Array<{ key: string; lastModified: number | null }>; next: string | null }> {
+		const page = await this.bucket.list({ prefix, limit: 1000, cursor: token ?? undefined });
+		return {
+			keys: page.objects.map((object) => ({
+				key: object.key,
+				lastModified: object.uploaded instanceof Date ? object.uploaded.getTime() : null,
+			})),
+			next: page.truncated ? page.cursor : null,
+		};
+	}
+
 	/** Idempotent: deleting a key that is already gone is not an error. */
 	async delete(keys: string[]): Promise<{ deleted: number; failed: string[] }> {
 		const failed: string[] = [];
@@ -148,10 +194,17 @@ export class ObjectStore implements BlobStore {
 	}
 }
 
-/** What is stored alongside each KV value. KV metadata is capped at 1 KiB. */
+/**
+ * What is stored alongside each KV value. KV metadata is capped at 1 KiB.
+ *
+ * `createdAt` looks redundant next to the D1 row and is not: it is what lets the
+ * orphan pass tell "left behind by a failed request" from "written nine seconds ago
+ * by a request still in flight", which is the only reason listing KV is safe at all.
+ */
 interface KVBlobMetadata {
 	size: number;
 	etag: string;
+	createdAt?: number;
 	contentType?: string;
 	filename?: string;
 }
@@ -182,6 +235,10 @@ export class KVObjectStore implements BlobStore {
 		private readonly prefix = "pp/v1",
 	) {}
 
+	objectPrefix(): string {
+		return `${this.prefix}/`;
+	}
+
 	keyFor(id: string, kind: ObjectKind): string {
 		return `${this.prefix}/${kind}/${id}`;
 	}
@@ -192,7 +249,11 @@ export class KVObjectStore implements BlobStore {
 	}
 
 	private metadataFor(options: PutOptions, size: number): KVBlobMetadata {
-		const metadata: KVBlobMetadata = { size, etag: `"${crypto.randomUUID()}"` };
+		const metadata: KVBlobMetadata = {
+			size,
+			etag: options.etag ?? `"${crypto.randomUUID()}"`,
+			createdAt: Date.now(),
+		};
 		if (options.contentType) metadata.contentType = options.contentType;
 		if (options.filename) metadata.filename = options.filename.slice(0, 200);
 		return metadata;
@@ -210,7 +271,10 @@ export class KVObjectStore implements BlobStore {
 		if (size > KV_MAX_VALUE_BYTES) {
 			throw fail.tooLarge(`${Math.floor(KV_MAX_VALUE_BYTES / 1024 / 1024)} MiB (the KV value limit)`);
 		}
-		await this.kv.put(key, value, { metadata: this.metadataFor(options, size) });
+		await this.kv.put(key, value, {
+			metadata: this.metadataFor(options, size),
+			...(options.ttlSeconds ? { expirationTtl: options.ttlSeconds } : {}),
+		});
 	}
 
 	/** Streams a request body straight into KV without buffering it in the isolate. */
@@ -239,6 +303,28 @@ export class KVObjectStore implements BlobStore {
 			httpEtag: meta?.etag ?? `"${key}"`,
 			contentType: meta?.contentType,
 			filename: meta?.filename,
+		};
+	}
+
+	/**
+	 * A page of keys, with the age each one was written at when it is knowable.
+	 *
+	 * KV hands back whatever metadata was written with the value, and nothing for keys
+	 * that were stored before `createdAt` existed — those report `lastModified: null`
+	 * and the orphan pass leaves them alone. Guessing an age in order to delete a
+	 * stranger's file is not a trade worth making.
+	 */
+	async list(
+		prefix: string,
+		token?: string,
+	): Promise<{ keys: Array<{ key: string; lastModified: number | null }>; next: string | null }> {
+		const page = await this.kv.list({ prefix, limit: 1000, cursor: token ?? undefined });
+		return {
+			keys: page.keys.map((entry) => ({
+				key: entry.name,
+				lastModified: (entry.metadata as KVBlobMetadata | null)?.createdAt ?? null,
+			})),
+			next: page.list_complete ? null : ((page as unknown as { cursor?: string }).cursor ?? null),
 		};
 	}
 

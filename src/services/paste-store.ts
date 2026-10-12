@@ -6,7 +6,8 @@ import { hashManageToken, hashPasswordVerifier } from "../lib/crypto";
 import { utf8Length } from "../lib/validation";
 import type { CreatePasteInput, CreatedPaste, PasteRecord, ReadResult } from "../types";
 import { MetadataStore } from "./metadata-store";
-import type { BlobBody, BlobStore, ObjectKind } from "./object-store";
+import type { BlobBody, ObjectKind } from "./object-store";
+import type { BlobPool } from "./storage-provider";
 import { resolveStorage } from "./storage-provider";
 import { supabaseStore } from "./supabase-store";
 
@@ -17,7 +18,8 @@ export interface Deferrer {
 
 export interface Stores {
 	meta: MetadataStore;
-	objects: BlobStore;
+	/** Every configured blob store, as one object: see ./storage-provider. */
+	objects: BlobPool;
 }
 
 export function stores(env: AppEnv): Stores {
@@ -25,11 +27,11 @@ export function stores(env: AppEnv): Stores {
 }
 
 /**
- * Picks the blob backend: R2, an S3-compatible bucket, or KV.
- * Metadata always lives in D1, so swapping this changes nothing about how reads,
- * burns, expiry and the cleanup sweep work. See ./storage-provider.
+ * The blob layer for this request: one object in front of every configured store.
+ * Metadata always lives in D1, so swapping what is behind it changes nothing about
+ * how reads, burns, expiry and the cleanup sweep work. See ./storage-provider.
  */
-function blobStore(env: AppEnv): BlobStore {
+function blobStore(env: AppEnv): BlobPool {
 	return resolveStorage(env).objects;
 }
 
@@ -87,6 +89,7 @@ export async function createPaste(
 			sizeBytes: body.sizeBytes,
 			content: body.content,
 			objectKey,
+			blobStore: body.blobStore,
 			passwordSalt: input.password?.salt ?? null,
 			passwordVerifier: input.password
 				? await hashPasswordVerifier(config.appSecret, id, input.password.salt, input.password.verifier)
@@ -142,7 +145,7 @@ export async function mirrorRecord(env: AppEnv, record: PasteRecord, ctx?: Defer
 	else await task;
 }
 
-async function safeDeleteObject(objects: BlobStore, key: string): Promise<void> {
+async function safeDeleteObject(objects: BlobPool, key: string): Promise<void> {
 	try {
 		await objects.delete([key]);
 	} catch {
@@ -153,40 +156,40 @@ async function safeDeleteObject(objects: BlobStore, key: string): Promise<void> 
 interface WrittenBody {
 	content: string | null;
 	objectKey: string | null;
+	/** Which store in the pool took the body, so a read can start there. */
+	blobStore: string | null;
 	sizeBytes: number;
 }
 
-async function writeBody(
-	config: Config,
-	input: CreatePasteInput,
-	id: string,
-	objects: BlobStore,
-): Promise<WrittenBody> {
+async function writeBody(config: Config, input: CreatePasteInput, id: string, objects: BlobPool): Promise<WrittenBody> {
 	if (input.body.type === "none") {
-		return { content: null, objectKey: null, sizeBytes: 0 };
+		return { content: null, objectKey: null, blobStore: null, sizeBytes: 0 };
 	}
 
 	if (input.body.type === "text") {
 		const bytes = utf8Length(input.body.text);
 		if (!input.encrypted && bytes <= config.inlineTextMaxBytes) {
-			return { content: input.body.text, objectKey: null, sizeBytes: bytes };
+			return { content: input.body.text, objectKey: null, blobStore: null, sizeBytes: bytes };
 		}
-		const key = objects.keyFor(id, "text");
-		await objects.putBytes(key, new TextEncoder().encode(input.body.text), {
+		const placed = await objects.place("text", id, input.body.text, {
 			contentType: "text/plain; charset=utf-8",
 			size: bytes,
 		});
-		return { content: null, objectKey: key, sizeBytes: bytes };
+		return { content: null, objectKey: placed.key, blobStore: placed.member.provider, sizeBytes: bytes };
 	}
 
 	const kind: ObjectKind = input.encrypted ? "blob" : input.kind === "file" ? "file" : "text";
-	const key = objects.keyFor(id, kind);
-	await objects.putBytes(key, input.body.bytes, {
+	const placed = await objects.place(kind, id, input.body.bytes, {
 		contentType: input.encrypted ? "application/octet-stream" : (input.contentType ?? "application/octet-stream"),
 		filename: input.filename ?? undefined,
 		size: input.body.bytes.byteLength,
 	});
-	return { content: null, objectKey: key, sizeBytes: input.body.bytes.byteLength };
+	return {
+		content: null,
+		objectKey: placed.key,
+		blobStore: placed.member.provider,
+		sizeBytes: input.body.bytes.byteLength,
+	};
 }
 
 /* ------------------------------------------------------------------ *
@@ -227,13 +230,25 @@ export type BodyResult =
 	| { kind: "redirect"; url: string }
 	| { kind: "missing" };
 
-export async function openBody(env: AppEnv, record: PasteRecord): Promise<BodyResult> {
+/**
+ * Open a body, and let the pool use every store it has.
+ *
+ * `defer` is the request's execution context. It is not decoration: a cached copy is
+ * written behind the response, and a background write with nothing holding it open is
+ * how you get half a file in the namespace. Without a context — tests, the burn path,
+ * any caller that must answer immediately — the read is served and nothing is copied.
+ */
+export async function openBody(env: AppEnv, record: PasteRecord, defer?: Deferrer): Promise<BodyResult> {
 	if (record.kind === "redirect") {
 		return record.redirectUrl ? { kind: "redirect", url: record.redirectUrl } : { kind: "missing" };
 	}
 	if (record.content !== null) return { kind: "inline", text: record.content };
 	if (record.objectKey) {
-		const object = await stores(env).objects.get(record.objectKey);
+		const { meta, objects } = stores(env);
+		const object = await objects.read(record.objectKey, record.blobStore as "r2" | "s3" | "kv" | null, {
+			defer,
+			stamp: (provider) => meta.setBlobStore(record.id, provider),
+		});
 		if (!object) return { kind: "missing" };
 		return { kind: "object", object, etag: object.httpEtag };
 	}

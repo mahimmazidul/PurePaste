@@ -122,7 +122,7 @@ export async function getPastePage(c: Context<AppBindings>): Promise<Response> {
 
 	let inline: string | null = null;
 	if (record.kind === "text" && !record.encrypted) {
-		const body = await openBody(c.env, record);
+		const body = await openBody(c.env, record, deferrer(c));
 		if (body.kind === "inline") inline = body.text;
 		else if (body.kind === "missing") {
 			// A row without a body means storage was lost mid-flight. Clean it up.
@@ -167,7 +167,7 @@ export async function getRawPaste(c: Context<AppBindings>): Promise<Response> {
 		});
 	}
 
-	const body = await openBody(c.env, record);
+	const body = await openBody(c.env, record, deferrer(c));
 	if (body.kind === "missing") {
 		deferrer(c)?.waitUntil(deletePaste(c.env, record).then(() => undefined));
 		return notAvailable(c, "missing", wantsJson);
@@ -247,7 +247,10 @@ export async function getMedia(c: Context<AppBindings>): Promise<Response> {
 		!record.passwordVerifier &&
 		!record.burnAfterRead
 	) {
-		const direct = await stores(c.env).objects.publicUrlFor?.(record.objectKey);
+		const direct = await stores(c.env).objects.publicUrlFor?.(
+			record.objectKey,
+			record.blobStore as "r2" | "s3" | "kv" | null,
+		);
 		if (direct && new URL(direct).origin === config.storageDirectOrigin) {
 			// Bucket-side caching is the bucket's business (or Cloudflare's, in front
 			// of it); the redirect itself is short-lived so a delete still lands.
@@ -255,7 +258,7 @@ export async function getMedia(c: Context<AppBindings>): Promise<Response> {
 		}
 	}
 
-	const body = await openBody(c.env, record);
+	const body = await openBody(c.env, record, deferrer(c));
 	if (body.kind === "missing") return notAvailable(c, "missing", false);
 
 	const headers = objectHeaders(media.contentType);
@@ -311,7 +314,7 @@ export async function getDownload(c: Context<AppBindings>): Promise<Response> {
 		return htmlError(c, { status: 404, title: "Nothing to download", message: "This link points somewhere else." });
 	}
 
-	const body = await openBody(c.env, record);
+	const body = await openBody(c.env, record, deferrer(c));
 	if (body.kind === "missing") return notAvailable(c, "missing", false);
 
 	const filename = record.kind === "file" ? (record.filename ?? record.id) : `${record.id}.txt`;
@@ -362,7 +365,7 @@ export async function revealPaste(c: Context<AppBindings>): Promise<Response> {
 	const claimed = await claimBurn(c.env, id, now, deferrer(c));
 	if (!claimed) return notAvailable(c, "consumed", format === "json");
 
-	const body = await openBody(c.env, claimed);
+	const body = await openBody(c.env, claimed, deferrer(c));
 	if (body.kind === "missing") return notAvailable(c, "missing", format === "json");
 	if (body.kind === "redirect") {
 		// A one-time link: the claim is what releases it, so send the visitor on.

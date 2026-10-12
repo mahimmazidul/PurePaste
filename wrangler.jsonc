@@ -68,6 +68,11 @@
     "S3_REGION": "us-east-005",
     "S3_PREFIX": "pp/v1",
     "STORAGE_FALLBACK": "auto",
+    // The namespace the pre-bucket files live in is not a backup or a fallback: it
+    // serves the reads. Bodies stay in the bucket, and the ones people open get a copy
+    // here that expires on its own. See README, "Blob storage".
+    "BLOB_KV": "cache",
+    "BLOB_KV_WRITES_PER_DAY": "600",
     // Supabase is a second runtime store: writes are mirrored there and reads fall
     // back to it when D1 fails. The publishable key is safe in a var because the
     // shipped schema grants it nothing but the keep-alive function; the service key,
