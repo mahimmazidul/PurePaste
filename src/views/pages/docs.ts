@@ -63,12 +63,16 @@ export function renderApiDocs(options: ApiDocsOptions): string {
 		["Body", "Content-Type", "Notes"],
 		[
 			["Raw text", code("text/plain"), "The body is the paste. Friendliest from a pipe."],
-			["JSON", code("application/json"), `${code("content")} or ${code("url")} (redirect), plus the options below.`, ],
-			["File or bytes", code("multipart/form-data"), `A ${code("file")} part; other parts become options.`, ],
-			["Opaque bytes", code("application/octet-stream"), `With ${code("?encrypted=1")} the bytes are stored untouched, or as the ${code("payload")} part of a form.`],
+			["JSON", code("application/json"), `${code("content")} or ${code("url")} (redirect), plus the options below.`],
+			["File or bytes", code("multipart/form-data"), `A ${code("file")} part; other parts become options.`],
+			[
+				"Opaque bytes",
+				code("application/octet-stream"),
+				`With ${code("?encrypted=1")} the bytes are stored untouched, or as the ${code("payload")} part of a form.`,
+			],
 		],
 	)}
-	<p class="field-note">Options, in the JSON body, form fields or query string: ${code("title")}, ${code("language")}, ${code("expire")} (or ${code("ttl")}), ${code("slug")}, ${code("burn")}, ${code("markdown")}, ${code("password_salt")}, ${code("password_verifier")}, ${code("password_iterations")}. Expiry accepts ${config.ttlChoices.map((choice) => code(choice.value)).join(", ")}, the aliases ${code("1w")}, ${code("1mo")} and ${code("3d")} (the file tab's shorter default), or bare seconds — clamped to ${code(`${config.maxTtlSeconds}`)}. Text defaults to ${code(`${config.defaultTtlSeconds}`)} (one week); uploads are meant to sit for three days.</p>
+	<p class="field-note">Options, in the JSON body, form fields or query string: ${code("title")}, ${code("language")}, ${code("expire")} (or ${code("ttl")}), ${code("slug")}, ${code("burn")}, ${code("markdown")}, ${code("password_salt")}, ${code("password_verifier")}, ${code("password_iterations")}. Expiry accepts ${config.ttlChoices.map((choice) => code(choice.value)).join(", ")}, the aliases ${code("1w")}, ${code("1mo")} and ${code("3d")} (the file tab's shorter default), or bare seconds — clamped to ${code(`${config.maxTtlSeconds}`)}. With no ${code("expire")} at all, text defaults to ${code(`${config.defaultTtlSeconds}`)} and uploads to ${code(`${config.fileDefaultTtlSeconds}`)} — the shorter one is deliberate, since files are what occupy the object store.</p>
 	${snippet(
 		`# A bare URL back — the friendliest thing for a shell script\necho "hello from a pipe" | curl -s -X POST --data-binary @- \\\n  -H "Content-Type: text/plain" -H "Accept: text/plain" \\\n  ${origin}/api/pastes`,
 		"text from a pipe",
@@ -210,6 +214,7 @@ curl -s -X POST ${origin}/api/links/<id>/reveal`,
 		title: "API",
 		page: "docs",
 		body,
-		description: "The Slip HTTP API: seal, read, unlock, reveal and let go of slips, links and files from anything that can speak curl.",
+		description:
+			"The Slip HTTP API: seal, read, unlock, reveal and let go of slips, links and files from anything that can speak curl.",
 	});
 }

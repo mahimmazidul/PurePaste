@@ -79,8 +79,8 @@ export function parseRedirectUrl(raw: unknown): string {
 	return normalized;
 }
 
-export function parseExpiration(raw: unknown, config: Config): number {
-	if (raw === null || raw === undefined || raw === "") return config.defaultTtlSeconds;
+export function parseExpiration(raw: unknown, config: Config, fallback = config.defaultTtlSeconds): number {
+	if (raw === null || raw === undefined || raw === "") return fallback;
 	let value = String(raw).trim().toLowerCase();
 
 	// Slip-style lifetime keys are accepted as aliases of the canonical menu.
@@ -287,7 +287,8 @@ export function assembleFileInput(
 		markdown: false,
 		burnAfterRead: parseFlag(raw.burn ?? raw.burnAfterRead),
 		encrypted: false,
-		ttlSeconds: parseExpiration(raw.expire ?? raw.ttl, config),
+		// No explicit lifetime: an upload is the one kind that gets the shorter default.
+		ttlSeconds: parseExpiration(raw.expire ?? raw.ttl, config, config.fileDefaultTtlSeconds),
 		slug: parseSlug(raw.slug),
 		password,
 		redirectUrl: null,

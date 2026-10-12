@@ -42,7 +42,9 @@ function metaLine(record: PasteRecord, config: Config, now: number): string {
 		`<span>fades <time datetime="${escapeHtml(formatDateTime(record.expiresAt))}" data-relative-expiry="${record.expiresAt}" data-relative-before="in">in ${escapeHtml(formatDuration(Math.max(0, Math.round((record.expiresAt - now) / 1000))))}</time></span>`,
 	);
 	if (config.viewCounting) {
-		parts.push(`<span class="meta-chip">${icons.eye}${record.views === 1 ? "1 read" : `${escapeHtml(String(record.views))} reads`}</span>`);
+		parts.push(
+			`<span class="meta-chip">${icons.eye}${record.views === 1 ? "1 read" : `${escapeHtml(String(record.views))} reads`}</span>`,
+		);
 	}
 	parts.push(`<span>${escapeHtml(formatBytes(record.sizeBytes))}</span>`);
 	if (record.passwordVerifier) {

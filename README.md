@@ -1,13 +1,13 @@
 # Slip
 
-*(repository and Worker still named PurePaste — the product the pages speak is Slip.)*
+_(repository and Worker still named PurePaste — the product the pages speak is Slip.)_
 
 A small, accountless service for text, files and short honest links, running entirely on Cloudflare. One Worker, one D1 database for metadata, one R2 bucket for bodies, and an hourly cron that cleans up after itself.
 
 Every slip expires — 30 days is the hard ceiling and the server enforces it, not the page you are looking at.
 The front page is one composer with three tabs — **a slip** of text, **a link** that shows its destination before anyone hops, **a file** up to 25 MiB — with a quiet stat bar of live totals underneath and a browser-local drawer of everything this device sealed. There are no accounts, no listing of what other people have pasted, no analytics, and nothing loaded from a third party. The link is the only way in, and the management link is the only way to remove something early.
 
-- **Pastes and files.** Text up to 10 MiB, files up to 25 MiB, small snippets kept in D1 and everything else streamed to the object store. Files default to a three-day life because the object store is the tightest budget on a free account.
+- **Pastes and files.** Text up to 10 MiB, files up to 25 MiB, small snippets kept in D1 and everything else streamed to the object store. Uploads default to a three-day life — in the UI _and_ on the API, so a bare `curl -F file=@…` gets it too — because the object store is the tightest budget on a free account; text still defaults to a week.
 - **Expiry that is real.** A row without a future `expires_at` cannot exist; the scheduled Worker removes what has lapsed.
 - **Nothing lost to a refresh.** The composer mirrors what you are typing into `localStorage` (`slip-draft-v1`) and puts it back on the next load, including the tab you were on. Files cannot be kept, so only their names and options come back; the password field is never stored; text over 200 KiB is not mirrored (that is a job for the file tab). Sealing a sheet clears the draft, and the banner next to a restored one offers to discard it.
 - **A preview before you seal.** The file tab can draw the chosen file locally — text as clipped plain text, images from a `data:` URL, everything else an honest "no preview here". No blob URLs and no `<object>`: the CSP is `img-src 'self' data:` and `object-src 'none'`, and the preview works inside it rather than by loosening it.

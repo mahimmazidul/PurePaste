@@ -7,9 +7,7 @@
  */
 try {
 	const stored = localStorage.getItem("slip-theme");
-	const dark = stored
-		? stored === "dark"
-		: window.matchMedia("(prefers-color-scheme: dark)").matches;
+	const dark = stored ? stored === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
 	if (dark) document.documentElement.classList.add("dark");
 } catch {
 	// A blocked localStorage means the device preference wins. Nothing else to do.

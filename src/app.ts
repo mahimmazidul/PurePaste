@@ -44,7 +44,7 @@ export function createApp(): Hono<AppBindings> {
 	/* ------------------------- pages ------------------------- */
 
 	app.get("/", async (c) => {
-		let stats: HomeStats = { slips: 0, links: 0, files: 0, bytes: 0 };
+		const stats: HomeStats = { slips: 0, links: 0, files: 0, bytes: 0 };
 		try {
 			const rows = await stores(c.env).meta.stats(Date.now());
 			for (const row of rows) {
@@ -62,9 +62,7 @@ export function createApp(): Hono<AppBindings> {
 	app.get("/pastes", (c) => c.redirect("/#drawer", 302));
 	app.get("/about", (c) => c.html(renderAboutPage(c.get("config"))));
 	app.get("/licenses", (c) => c.html(renderLicensesPage(c.get("config"))));
-	app.get("/docs", (c) =>
-		c.html(renderApiDocs({ config: c.get("config"), origin: new URL(c.req.url).origin })),
-	);
+	app.get("/docs", (c) => c.html(renderApiDocs({ config: c.get("config"), origin: new URL(c.req.url).origin })));
 	app.get("/robots.txt", (c) => c.text("User-agent: *\nDisallow: /\n"));
 
 	app.post("/", rateLimit("create"), async (c) => {

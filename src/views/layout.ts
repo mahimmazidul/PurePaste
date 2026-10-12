@@ -71,9 +71,7 @@ export function renderLayout(options: LayoutOptions): string {
 	<meta name="turnstile-site-key" content="${escapeHtml(config.turnstileSiteKey)}">`
 			: "";
 
-	const tagline = options.compactHeader
-		? ""
-		: `<span class="tagline smallcaps">text &amp; links that fade</span>`;
+	const tagline = options.compactHeader ? "" : `<span class="tagline smallcaps">text &amp; links that fade</span>`;
 
 	return `<!doctype html>
 <html lang="en">

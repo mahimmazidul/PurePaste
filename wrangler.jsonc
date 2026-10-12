@@ -35,8 +35,8 @@
     {
       "binding": "BLOBS",
       // Created with: npx wrangler kv namespace create BLOBS
-      "id": "c5a11354c60e46e2aff984a8522be788",
-    },
+      "id": "c5a11354c60e46e2aff984a8522be788"
+    }
   ],
   // Hourly cleanup of expired and consumed pastes. Cloudflare cron runs in UTC.
   "triggers": {

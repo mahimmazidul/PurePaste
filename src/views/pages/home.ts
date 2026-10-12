@@ -1,4 +1,4 @@
-import { FILE_TTL_SECONDS, FILE_TTL_VALUE } from "../../config";
+import { FILE_TTL_VALUE } from "../../config";
 import type { Config } from "../../config";
 import { escapeHtml, formatBytes } from "../../lib/format";
 import { LANGUAGES } from "../../lib/languages";
@@ -62,17 +62,29 @@ const TTL_LABELS: Record<string, string> = {
  */
 function ttlChoicesWithFiles(config: Config): Array<{ value: string; seconds: number }> {
 	const choices = config.ttlChoices.map((choice) => ({ value: choice.value as string, seconds: choice.seconds }));
-	if (!choices.some((choice) => choice.seconds === FILE_TTL_SECONDS)) {
-		choices.push({ value: FILE_TTL_VALUE, seconds: FILE_TTL_SECONDS });
+	const wanted = config.fileDefaultTtlSeconds;
+	// The menu only grows when the server's upload default is not already offered,
+	// so the option the tab selects is never a value the backend would ignore.
+	if (!choices.some((choice) => choice.seconds === wanted)) {
+		choices.push({ value: FILE_TTL_VALUE, seconds: wanted });
 	}
 	return choices.sort((a, b) => a.seconds - b.seconds);
+}
+
+/** The lifetime a file gets if nothing is changed, in words. */
+function fileLifetimeLabel(config: Config): string {
+	const choice = ttlChoicesWithFiles(config).find((option) => option.seconds === config.fileDefaultTtlSeconds);
+	const labelled = choice ? TTL_LABELS[choice.value] : undefined;
+	if (labelled) return labelled;
+	const seconds = config.fileDefaultTtlSeconds;
+	return seconds >= 86_400 ? `${Math.round(seconds / 86_400)} days` : `${Math.round(seconds / 3_600)} hours`;
 }
 
 function expirationOptions(config: Config, selected: string, fileMode = false): string {
 	const choices = fileMode
 		? ttlChoicesWithFiles(config)
 		: config.ttlChoices.map((choice) => ({ value: choice.value as string, seconds: choice.seconds }));
-	const defaultSeconds = fileMode ? Math.min(FILE_TTL_SECONDS, config.maxTtlSeconds) : config.defaultTtlSeconds;
+	const defaultSeconds = fileMode ? config.fileDefaultTtlSeconds : config.defaultTtlSeconds;
 	const fallback = choices.find((choice) => choice.seconds === defaultSeconds)?.value ?? choices[0]?.value;
 	return choices
 		.map((choice) => {
@@ -222,7 +234,7 @@ export function renderHome(options: HomeOptions): string {
 					<span class="dropzone-icon" aria-hidden="true">${icons.upload}</span>
 					<div class="dropzone-text">
 						<label class="dropzone-label" for="file">Drop a file here, or choose one</label>
-						<p class="field-note">Up to ${escapeHtml(fileLimit)}, then it fades in ${escapeHtml(TTL_LABELS[FILE_TTL_VALUE] ?? "3 days")}. Files always download rather than open in the browser.</p>
+						<p class="field-note">Up to ${escapeHtml(fileLimit)}, then it fades in ${escapeHtml(fileLifetimeLabel(config))}. Files always download rather than open in the browser.</p>
 					</div>
 					<input class="file-input" type="file" id="file" name="file" data-file-input>
 				</div>

@@ -15,7 +15,14 @@ import { renderGonePage } from "../views/pages/error";
  * for burn-after-reading links, spends it atomically.
  */
 
-function asLinkPayload(record: { id: string; redirectUrl: string | null; burnAfterRead: boolean; views: number; createdAt: number; expiresAt: number }) {
+function asLinkPayload(record: {
+	id: string;
+	redirectUrl: string | null;
+	burnAfterRead: boolean;
+	views: number;
+	createdAt: number;
+	expiresAt: number;
+}) {
 	return {
 		id: record.id,
 		url: record.redirectUrl,
@@ -61,7 +68,14 @@ export async function goLink(c: Context<AppBindings>): Promise<Response> {
 
 	if (result.status !== "ok" && result.status !== "needs-reveal") {
 		if (result.status === "expired") return c.redirect(`/l/${id}`, 303);
-		return c.html(renderGonePage({ config: c.get("config"), reason: result.status === "consumed" ? "burned" : "missing", kind: "link" }), result.status === "consumed" ? 410 : 404);
+		return c.html(
+			renderGonePage({
+				config: c.get("config"),
+				reason: result.status === "consumed" ? "burned" : "missing",
+				kind: "link",
+			}),
+			result.status === "consumed" ? 410 : 404,
+		);
 	}
 
 	const record = result.record;

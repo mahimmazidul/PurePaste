@@ -42,11 +42,68 @@ describe("file expiry and file panel", () => {
 		expect(slipPanel).toContain('<option value="7d" selected>');
 	});
 
+	it("gives the API the same shorter default the file tab shows", async () => {
+		const throughApi = new FormData();
+		throughApi.set(
+			"file",
+			new File([new Uint8Array([1, 2, 3])], "no-choices.bin", { type: "application/octet-stream" }),
+		);
+		const upload = await request("/api/pastes", {
+			method: "POST",
+			body: throughApi,
+			headers: { Accept: "application/json" },
+		});
+		expect(upload.status).toBe(201);
+		const uploaded = await readJson<{ expires_in_seconds: number }>(upload);
+		expect(uploaded.expires_in_seconds).toBe(3 * 24 * 60 * 60);
+
+		// Text is untouched, and an explicit lifetime always wins over both.
+		const plain = await request("/api/pastes", {
+			method: "POST",
+			body: JSON.stringify({ content: "no expiry given" }),
+			headers: { "Content-Type": "application/json", Accept: "application/json" },
+		});
+		expect((await readJson<{ expires_in_seconds: number }>(plain)).expires_in_seconds).toBe(7 * 24 * 60 * 60);
+
+		const told = new FormData();
+		told.set("file", new File([new Uint8Array([1, 2, 3])], "thirty-days.bin", { type: "application/octet-stream" }));
+		told.set("expire", "30d");
+		const overridden = await request("/api/pastes", {
+			method: "POST",
+			body: told,
+			headers: { Accept: "application/json" },
+		});
+		expect((await readJson<{ expires_in_seconds: number }>(overridden)).expires_in_seconds).toBe(30 * 24 * 60 * 60);
+	});
+
+	it("lets a query string fill what the form left empty", async () => {
+		const viaQuery = new FormData();
+		viaQuery.set("file", new File([new Uint8Array([1, 2, 3])], "queried.bin", { type: "application/octet-stream" }));
+		const queryOnly = await request("/api/pastes?expire=1h", {
+			method: "POST",
+			body: viaQuery,
+			headers: { Accept: "application/json" },
+		});
+		expect((await readJson<{ expires_in_seconds: number }>(queryOnly)).expires_in_seconds).toBe(3600);
+
+		// A posted field still outranks the URL.
+		const both = new FormData();
+		both.set("file", new File([new Uint8Array([1, 2, 3])], "both.bin", { type: "application/octet-stream" }));
+		both.set("expire", "1h");
+		const fieldWins = await request("/api/pastes?expire=30d", {
+			method: "POST",
+			body: both,
+			headers: { Accept: "application/json" },
+		});
+		expect((await readJson<{ expires_in_seconds: number }>(fieldWins)).expires_in_seconds).toBe(3600);
+	});
+
 	it("keeps a chosen file in the shared menu honest", async () => {
 		const html = await home();
 		// The menu still offers the long tails, so nothing is taken away.
 		expect(selects(html).get("expire-file")).toContain('value="30d"');
 		expect(testConfig.defaultTtlSeconds).toBe(7 * 24 * 60 * 60);
+		expect(testConfig.fileDefaultTtlSeconds).toBe(3 * 24 * 60 * 60);
 	});
 
 	it("gives the selected file its own row, with preview and remove", async () => {

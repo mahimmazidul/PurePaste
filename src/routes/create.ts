@@ -149,15 +149,18 @@ async function parseRequest(
 			return typeof value === "string" ? value : null;
 		};
 
+		// A posted field always wins; the query string only fills gaps. That keeps the
+		// documented "form fields or query string" true for multipart too, which is
+		// how a script reaches it (`curl -F file=@x "?expire=1h"`).
 		const raw: RawCreateInput = {
-			title: get("title"),
-			language: get("language"),
+			title: get("title") ?? query.title,
+			language: get("language") ?? query.language,
 			content: get("content"),
-			url: get("url"),
-			slug: get("slug"),
-			expire: get("expire"),
-			burn: get("burn"),
-			markdown: get("markdown"),
+			url: get("url") ?? query.url,
+			slug: get("slug") ?? query.slug,
+			expire: get("expire") ?? query.expire,
+			burn: get("burn") ?? query.burn,
+			markdown: get("markdown") ?? query.markdown,
 			passwordSalt: get("password_salt"),
 			passwordVerifier: get("password_verifier"),
 			passwordIterations: get("password_iterations"),

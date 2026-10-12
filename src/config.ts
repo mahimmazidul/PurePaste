@@ -37,6 +37,8 @@ export const TTL_EXTRA_CHOICES = FILE_TTL_ALIASES.map((value) => ({ value, secon
 export interface Config {
 	maxTtlSeconds: number;
 	defaultTtlSeconds: number;
+	/** Uploads default shorter than text: they are what occupies the object store. */
+	fileDefaultTtlSeconds: number;
 	inlineTextMaxBytes: number;
 	textMaxBytes: number;
 	fileMaxBytes: number;
@@ -88,6 +90,10 @@ export function resolveConfig(env: object): Config {
 		maxTtlSeconds,
 	);
 
+	// Never longer than the general default, so an operator who tightens
+	// DEFAULT_TTL_SECONDS is not quietly overridden by the file lifetime.
+	const fileDefaultTtlSeconds = Math.min(FILE_TTL_SECONDS, maxTtlSeconds, defaultTtlSeconds);
+
 	const inlineTextMaxBytes = readInt(field(env, "INLINE_TEXT_MAX_BYTES"), 64 * 1024, 1024, 1024 * 1024);
 	const textMaxBytes = readInt(field(env, "TEXT_MAX_BYTES"), 10 * 1024 * 1024, inlineTextMaxBytes, 100 * 1024 * 1024);
 	const appSecretValue = field(env, "APP_SECRET");
@@ -97,6 +103,7 @@ export function resolveConfig(env: object): Config {
 	return {
 		maxTtlSeconds,
 		defaultTtlSeconds,
+		fileDefaultTtlSeconds,
 		inlineTextMaxBytes,
 		textMaxBytes,
 		fileMaxBytes: readInt(field(env, "FILE_MAX_BYTES"), 25 * 1024 * 1024, 1024, 100 * 1024 * 1024),

@@ -288,9 +288,7 @@ export async function revealPaste(c: Context<AppBindings>): Promise<Response> {
 	}
 
 	const text =
-		body.kind === "inline"
-			? body.text
-			: new TextDecoder().decode(await new Response(body.object.body).arrayBuffer());
+		body.kind === "inline" ? body.text : new TextDecoder().decode(await new Response(body.object.body).arrayBuffer());
 
 	if (format === "json") {
 		return c.json({ id: claimed.id, kind: claimed.kind, content: text, burned: true });
