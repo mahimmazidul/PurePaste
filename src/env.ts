@@ -29,6 +29,38 @@ export interface AppEnv {
 	FEATURE_TURNSTILE?: string;
 	CLEANUP_BATCH_SIZE?: string;
 	CLEANUP_MAX_BATCHES?: string;
+	MEDIA_CACHE_SECONDS?: string;
+
+	/**
+	 * Blob backend. Absent means `auto`: R2 if a bucket is bound, then a
+	 * configured S3 endpoint, then Firebase, then the KV namespace. Set it
+	 * explicitly to `kv | r2 | s3 | firebase` to pin one.
+	 */
+	STORAGE_PROVIDER?: string;
+	/** Any S3-compatible endpoint: Backblaze B2, Supabase Storage, R2, MinIO. */
+	S3_ENDPOINT?: string;
+	S3_REGION?: string;
+	S3_BUCKET?: string;
+	S3_ACCESS_KEY_ID?: string;
+	S3_SECRET_ACCESS_KEY?: string;
+	/** Public base for direct links, so bytes can skip the Worker entirely. */
+	S3_PUBLIC_BASE?: string;
+	S3_PREFIX?: string;
+	/** `on` for endpoints that only accept `<bucket>.<host>` addressing (Supabase). */
+	S3_VIRTUAL_HOST_STYLE?: string;
+	/**
+	 * `on` hands media GETs a 302 straight to the bucket instead of streaming them
+	 * through this Worker. Only honoured when a public base is configured, and only
+	 * for images, video and audio.
+	 */
+	STORAGE_DIRECT_LINKS?: string;
+	/** Firebase Storage: service-account JSON fields, pasted as secrets. */
+	FIREBASE_PROJECT_ID?: string;
+	FIREBASE_BUCKET?: string;
+	FIREBASE_CLIENT_EMAIL?: string;
+	FIREBASE_PRIVATE_KEY?: string;
+	/** Only for a bucket whose objects are public; otherwise links stay proxied. */
+	FIREBASE_PUBLIC_BASE?: string;
 
 	/** Secrets. */
 	APP_SECRET?: string;

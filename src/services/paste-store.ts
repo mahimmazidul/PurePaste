@@ -6,7 +6,8 @@ import { hashManageToken, hashPasswordVerifier } from "../lib/crypto";
 import { utf8Length } from "../lib/validation";
 import type { CreatePasteInput, CreatedPaste, PasteRecord, ReadResult } from "../types";
 import { MetadataStore } from "./metadata-store";
-import { KVObjectStore, ObjectStore, type BlobBody, type BlobStore, type ObjectKind } from "./object-store";
+import type { BlobBody, BlobStore, ObjectKind } from "./object-store";
+import { resolveStorage } from "./storage-provider";
 
 export interface Stores {
 	meta: MetadataStore;
@@ -17,11 +18,13 @@ export function stores(env: AppEnv): Stores {
 	return { meta: new MetadataStore(env.DB), objects: blobStore(env) };
 }
 
-/** R2 when a bucket is bound; the Workers KV backend otherwise. */
+/**
+ * Picks the blob backend (R2, an S3-compatible bucket, Firebase Storage, or KV).
+ * Metadata always lives in D1, so swapping this changes nothing about how reads,
+ * burns, expiry and the cleanup sweep work. See ./storage-provider.
+ */
 function blobStore(env: AppEnv): BlobStore {
-	if (env.BUCKET) return new ObjectStore(env.BUCKET);
-	if (env.BLOBS) return new KVObjectStore(env.BLOBS);
-	throw new Error("No blob storage is bound: configure an R2 bucket (BUCKET) or a KV namespace (BLOBS).");
+	return resolveStorage(env).objects;
 }
 
 export interface CreateOptions {

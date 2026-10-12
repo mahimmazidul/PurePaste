@@ -1,3 +1,8 @@
+import { fail } from "../lib/errors";
+
+/** Workers KV refuses values above 25 MiB; the buffered put enforces it up front. */
+export const KV_MAX_VALUE_BYTES = 25 * 1024 * 1024;
+
 export type ObjectKind = "text" | "file" | "blob";
 
 export interface PutOptions {
@@ -29,8 +34,9 @@ export interface BlobBody {
  *                       (R2 activation requires a payment method even for
  *                       free-tier usage; KV needs none).
  *
- * `stores()` picks R2 when a bucket is bound and KV otherwise, so switching
- * back is a wrangler.jsonc change with no code edit.
+ * `./storage-provider` decides which of these is live (R2, an S3-compatible
+ * bucket, Firebase Storage, KV), so switching is configuration, not a code edit.
+ * The R2 and KV shapes below stay the ones every other backend is modelled on.
  */
 export interface BlobStore {
 	keyFor(id: string, kind: ObjectKind): string;
@@ -39,6 +45,13 @@ export interface BlobStore {
 	putBytes(key: string, bytes: Uint8Array, options?: PutOptions): Promise<void>;
 	get(key: string): Promise<BlobBody | null>;
 	delete(keys: string[]): Promise<{ deleted: number; failed: string[] }>;
+	/**
+	 * An optional link the visitor's browser can fetch by itself, bypassing this
+	 * Worker. Present on the S3-compatible and Firebase stores when the operator
+	 * configures a public bucket base (or, for S3, when presigned links are the
+	 * only option). R2 and KV return null: their reads already cost nothing extra.
+	 */
+	publicUrlFor?(key: string): Promise<string | null>;
 }
 
 /**
@@ -191,6 +204,12 @@ export class KVObjectStore implements BlobStore {
 		options: PutOptions = {},
 	): Promise<void> {
 		const size = options.size ?? (value instanceof ReadableStream ? -1 : KVObjectStore.byteSize(value));
+		// The streaming path is bounded by FixedLengthStream; the buffered one needs
+		// its own stop, or an oversized upload fails inside KV after the metadata row
+		// is already written, leaving a row that points at nothing.
+		if (size > KV_MAX_VALUE_BYTES) {
+			throw fail.tooLarge(`${Math.floor(KV_MAX_VALUE_BYTES / 1024 / 1024)} MiB (the KV value limit)`);
+		}
 		await this.kv.put(key, value, { metadata: this.metadataFor(options, size) });
 	}
 

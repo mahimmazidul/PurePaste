@@ -4,7 +4,8 @@ import { verifyPassword, verifyUnlockTicket } from "../lib/crypto";
 import { escapeHtml } from "../lib/format";
 import { negotiate } from "../lib/negotiate";
 import { parseId } from "../lib/validation";
-import { claimBurn, deletePaste, loadPaste, openBody } from "../services/paste-store";
+import { classifyMedia } from "../lib/media";
+import { claimBurn, deletePaste, loadPaste, openBody, stores } from "../services/paste-store";
 import { recordView } from "../services/views";
 import { renderPastePage } from "../views/pages/paste";
 import { renderErrorPage } from "../views/pages/error";
@@ -190,6 +191,101 @@ export async function getRawPaste(c: Context<AppBindings>): Promise<Response> {
 	return new Response(body.object.body, { headers });
 }
 
+/**
+ * Media: the same bytes, inline, for the types a browser can be handed without
+ * risk. This is the only route in the app that answers with `inline`.
+ *
+ * Three rules keep it honest:
+ *  - the content type is whatever *we* allowlisted, never the uploader's claim,
+ *    so `photo.png` served as `image/png` cannot smuggle markup;
+ *  - markup and scriptable formats (html, svg) are refused outright — the
+ *    download route still gives them back untouched;
+ *  - a preview never spends a burn and never counts as a visit, so hotlinking
+ *    an image is free of side effects for the owner.
+ */
+export async function getMedia(c: Context<AppBindings>): Promise<Response> {
+	const id = parseId(c.req.param("id"));
+	const result = await loadPaste(c.env, id, { now: Date.now() });
+	if (result.status === "needs-reveal") {
+		return refuse(c, 403, "This link opens once, so it is not drawn inline.", { error: "confirmation_required" });
+	}
+	if (result.status !== "ok") return notAvailable(c, result.status, false);
+
+	const record = result.record;
+	const unlock = await checkUnlocked(c, record.id, record.passwordVerifier, record.passwordSalt);
+	if (!unlock.unlocked) {
+		return refuse(c, 401, "Unlock it on the slip page first.", { error: "password_required" });
+	}
+	if (record.encrypted) {
+		return refuse(c, 403, "Encrypted bytes are not readable here — we only ever hold the ciphertext.", {
+			error: "encrypted",
+		});
+	}
+	if (record.kind === "redirect") {
+		return refuse(c, 404, "Nothing to draw: this link points somewhere else.", { error: "not_media" });
+	}
+
+	const media = classifyMedia(record.contentType, record.filename);
+	if (!media.kind || !media.contentType) {
+		return refuse(c, 415, `Not something a browser should be handed inline (${media.reason}). Download it instead.`, {
+			error: "not_media",
+		});
+	}
+
+	const config = c.get("config");
+
+	// Direct link: the bucket's own URL answers with the bytes, so a hot image never
+	// crosses an isolate or spends our request quota. Deliberately narrow — an image,
+	// clip or track, public, unlocked, not burn-after-read, and never a PDF, whose
+	// response is often opened as a top-level navigation where our inline rules matter.
+	const embeddable = media.kind === "image" || media.kind === "video" || media.kind === "audio";
+	if (
+		embeddable &&
+		config.storageDirectOrigin &&
+		record.objectKey &&
+		!record.passwordVerifier &&
+		!record.burnAfterRead
+	) {
+		const direct = await stores(c.env).objects.publicUrlFor?.(record.objectKey);
+		if (direct && new URL(direct).origin === config.storageDirectOrigin) {
+			// Bucket-side caching is the bucket's business (or Cloudflare's, in front
+			// of it); the redirect itself is short-lived so a delete still lands.
+			return Response.redirect(direct, 302);
+		}
+	}
+
+	const body = await openBody(c.env, record);
+	if (body.kind === "missing") return notAvailable(c, "missing", false);
+
+	const headers = objectHeaders(media.contentType);
+	const filename = record.filename ?? `${record.id}.${media.kind === "pdf" ? "pdf" : media.kind}`;
+	headers.set("Content-Disposition", contentDisposition(filename, true));
+	// Hotlinked media is public-by-link like the page itself, so caching is only
+	// allowed for a paste that carries no lock and no burn, and only when the
+	// operator turns it on. Anything else keeps `no-store`.
+	const cacheable = !record.passwordVerifier && !record.burnAfterRead && config.mediaCacheSeconds > 0;
+	headers.set("Cache-Control", cacheable ? `public, max-age=${config.mediaCacheSeconds}, immutable` : "no-store");
+
+	if (body.kind === "inline") {
+		const bytes = new TextEncoder().encode(body.text);
+		headers.set("Content-Length", String(bytes.byteLength));
+		return new Response(body.text, { headers });
+	}
+
+	if (body.kind === "object") {
+		if (body.object.httpEtag) {
+			headers.set("ETag", body.object.httpEtag);
+			if (c.req.header("if-none-match") === body.object.httpEtag) {
+				return new Response(null, { status: 304, headers });
+			}
+		}
+		if (body.object.size) headers.set("Content-Length", String(body.object.size));
+		return new Response(body.object.body, { headers });
+	}
+
+	return notAvailable(c, "missing", false);
+}
+
 /** Download: the same bytes, always as an attachment with a safe name. */
 export async function getDownload(c: Context<AppBindings>): Promise<Response> {
 	const id = parseId(c.req.param("id"));
@@ -328,6 +424,12 @@ function objectHeaders(contentType: string): Headers {
 	headers.set("Referrer-Policy", "no-referrer");
 	headers.set("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet");
 	return headers;
+}
+
+function refuse(c: Context<AppBindings>, status: number, message: string, json: Record<string, unknown>): Response {
+	const wantsJson = negotiate(c, "json") === "json";
+	if (wantsJson) return c.json(json, status as 401 | 403 | 404 | 415);
+	return htmlError(c, { status, title: "Nothing to draw", message });
 }
 
 /** RFC 6266: an ASCII fallback plus a UTF-8 form, so odd names survive. */

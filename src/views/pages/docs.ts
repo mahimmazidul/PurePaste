@@ -109,12 +109,14 @@ export function renderApiDocs(options: ApiDocsOptions): string {
 	${endpoint("get", "/api/pastes/<id>", "metadata as JSON")}
 	${endpoint("get", "/raw/<id>", "the body itself (also at /<id>/raw)")}
 	${endpoint("get", "/download/<id>", "as an attachment (also at /<id>/download)")}
-	${endpoint("get", "/api/config", "this instance's limits, features and TTL menu")}
+	${endpoint("get", "/p/<id>/media", "the body inline, for previewable types only (also at /<id>/media)")}
+	${endpoint("get", "/api/config", "limits, features, TTL menu and which store holds the files")}
 	<p class="field-note">Pages: slips live at <span class="mono">/p/&lt;id&gt;</span>, links at <span class="mono">/l/&lt;id&gt;</span> (the bare <span class="mono">/&lt;id&gt;</span> still works and forwards). Deletion keys travel as <span class="mono">Authorization: Bearer</span> or <span class="mono">X-Manage-Token</span>.</p>
 	${snippet(
-		`curl -s ${origin}/api/pastes/<id>             # metadata\ncurl -s ${origin}/raw/<id>                       # the bytes\ncurl -s "${origin}/raw/<id>?format=json"         # {"id":…,"kind":"text","content":…}\ncurl -s -OJ ${origin}/download/<id>              # attachment, original filename\ncurl -s ${origin}/api/config                     # limits, features, TTL choices`,
+		`curl -s ${origin}/api/pastes/<id>             # metadata\ncurl -s ${origin}/raw/<id>                       # the bytes\ncurl -s "${origin}/raw/<id>?format=json"         # {"id":…,"kind":"text","content":…}\ncurl -s -OJ ${origin}/download/<id>              # attachment, original filename\ncurl -sI ${origin}/p/<id>/media                   # inline preview, or 415 if it cannot be one\ncurl -s ${origin}/api/config                     # limits, features, TTL choices, storage backend`,
 		"reading",
 	)}
+	<p><strong>Media.</strong> ${code("/p/<id>/media")} returns the same bytes as ${code("/raw/<id>")} but with ${code("Content-Disposition: inline")} and a content type this server chose from an allowlist — images, ${code("video/mp4")}, ${code("video/webm")}, audio, PDFs, and text files rendered as plain text. Anything a browser might execute or render as markup (${code("text/html")}, ${code("image/svg+xml")}, unknown types) is answered ${code("415")} with ${code('error: "not_media"')}: it still downloads, it is just never drawn. A locked paste answers ${code("401")} until the unlock cookie is set; a burn-after-reading paste answers ${code("403")} and spends nothing, because a preview is not a read. Responses carry an ${code("ETag")}, honour ${code("If-None-Match")} with ${code("304")}, and do <em>not</em> honour ${code("Range")} — a ${code("<video>")} element can play a file from the start, not scrub it. Nothing here counts as a view.</p>
 	<p>A password-protected paste answers metadata with ${code("locked: true")} and the KDF parameters a client needs — and never the title, filename or content until it is unlocked. There is deliberately no endpoint that lists pastes.</p>
 </section>
 

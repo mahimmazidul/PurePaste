@@ -43,6 +43,14 @@ export interface Config {
 	textMaxBytes: number;
 	fileMaxBytes: number;
 	passwordIterations: number;
+	/** `Cache-Control` lifetime for public, unguarded media. 0 keeps everything no-store. */
+	mediaCacheSeconds: number;
+	/**
+	 * Origin of a public bucket base, when direct links are switched on. It is the
+	 * only third-party media source the CSP allows, and `GET /p/:id/media` answers
+	 * with a redirect to it so the bytes skip this Worker.
+	 */
+	storageDirectOrigin?: string;
 	unlockCookieTtlSeconds: number;
 	redirectEnabled: boolean;
 	viewCounting: boolean;
@@ -63,6 +71,17 @@ const DEV_SECRET = "purepaste-development-secret-do-not-use-in-production";
 /** Reads a configuration value without assuming a particular environment shape. */
 function field(env: object, key: string): unknown {
 	return (env as Record<string, unknown>)[key];
+}
+
+/** Only an https origin is accepted: it goes straight into the CSP header. */
+function httpsOrigin(value: unknown): string | undefined {
+	if (typeof value !== "string" || !value.trim()) return undefined;
+	try {
+		const url = new URL(value.trim());
+		return url.protocol === "https:" ? url.origin : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 function readInt(value: unknown, fallback: number, min: number, max: number): number {
@@ -108,6 +127,10 @@ export function resolveConfig(env: object): Config {
 		textMaxBytes,
 		fileMaxBytes: readInt(field(env, "FILE_MAX_BYTES"), 25 * 1024 * 1024, 1024, 100 * 1024 * 1024),
 		passwordIterations: readInt(field(env, "PASSWORD_ITERATIONS"), 210_000, 100_000, 1_000_000),
+		mediaCacheSeconds: readInt(field(env, "MEDIA_CACHE_SECONDS"), 0, 0, 31_536_000),
+		storageDirectOrigin: readFlag(field(env, "STORAGE_DIRECT_LINKS"), false)
+			? httpsOrigin(field(env, "S3_PUBLIC_BASE") ?? field(env, "FIREBASE_PUBLIC_BASE"))
+			: undefined,
 		unlockCookieTtlSeconds: readInt(field(env, "UNLOCK_COOKIE_TTL_SECONDS"), 1800, 60, 24 * 60 * 60),
 		redirectEnabled: readFlag(field(env, "FEATURE_REDIRECT"), true),
 		viewCounting: readFlag(field(env, "FEATURE_VIEW_COUNTING"), false),

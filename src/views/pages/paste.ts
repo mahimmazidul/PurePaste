@@ -1,6 +1,7 @@
 import type { Config } from "../../config";
 import { escapeHtml, formatBytes, formatDateTime, formatDisplayDateTime, formatDuration } from "../../lib/format";
 import { languageLabel } from "../../lib/languages";
+import { classifyMedia } from "../../lib/media";
 import { icons, notice, renderLayout } from "../layout";
 import type { PasteRecord } from "../../types";
 
@@ -176,15 +177,54 @@ function encryptedBody(record: PasteRecord): string {
 	</section>`;
 }
 
-function fileBody(record: PasteRecord): string {
+/**
+ * A stored file, with a frame only for what a browser may be handed safely.
+ *
+ * `classifyMedia` is the same gate the `/media` route applies, so the page can
+ * never promise a preview the response would refuse. A burn is excluded because
+ * a preview must not spend it; a password-locked file is excluded until the
+ * visitor has unlocked, because the media route demands the same ticket.
+ */
+function fileBody(record: PasteRecord, unlocked: boolean): string {
+	const name = record.filename ?? "download";
+	const eligible = unlocked && !record.encrypted && !record.burnAfterRead && !record.passwordVerifier;
+	const media = eligible
+		? classifyMedia(record.contentType, record.filename)
+		: { kind: null, contentType: null, reason: null };
+	const src = `/p/${encodeURIComponent(record.id)}/media`;
+	const caption = `${escapeHtml(formatBytes(record.sizeBytes))}${record.contentType ? ` · ${escapeHtml(record.contentType)}` : ""}`;
+
+	let frame = "";
+	let primary = `<a class="btn btn-primary" href="${escapeHtml(`/download/${record.id}`)}">${icons.download}<span>Save file</span></a>`;
+	let note = "downloads rather than opens in the browser";
+
+	if (media.kind === "image") {
+		frame = `<figure class="media-frame"><img src="${escapeHtml(src)}" alt="${escapeHtml(name)}" loading="lazy" decoding="async"></figure>`;
+		note = "shown here, at its own size · the original still downloads";
+	} else if (media.kind === "video") {
+		frame = `<figure class="media-frame"><video src="${escapeHtml(src)}" controls playsinline preload="metadata"></video></figure>`;
+		note = "plays here · seeking needs the downloaded copy";
+	} else if (media.kind === "audio") {
+		frame = `<div class="media-frame media-audio"><audio src="${escapeHtml(src)}" controls preload="metadata"></audio></div>`;
+		note = "plays here · the original still downloads";
+	} else if (media.kind === "pdf") {
+		note = "opens in your browser's own viewer, in a tab of its own";
+		primary = `<a class="btn btn-primary" href="${escapeHtml(src)}" target="_blank" rel="noopener">${icons.eye}<span>Open the PDF</span></a>${primary}`;
+	} else if (media.kind === "text") {
+		note = "read it here, or take the file";
+		frame = `<pre class="code-block media-text" data-file-text data-src="${escapeHtml(src)}" hidden><code>Loading…</code></pre>`;
+		primary = `<button class="btn btn-secondary" type="button" data-file-text-toggle>${icons.raw}<span>Read it here</span></button>${primary}`;
+	}
+
 	return `
+	${frame}
 	<div class="file-card rise-in">
 		<span class="file-icon">${icons.file}</span>
 		<div class="file-meta">
-			<p class="file-name mono">${escapeHtml(record.filename ?? "download")}</p>
-			<p class="field-note">${escapeHtml(formatBytes(record.sizeBytes))}${record.contentType ? ` · ${escapeHtml(record.contentType)}` : ""} · downloads rather than opens in the browser</p>
+			<p class="file-name mono">${escapeHtml(name)}</p>
+			<p class="field-note">${caption} · ${escapeHtml(note)}</p>
 		</div>
-		<a class="btn btn-primary" href="${escapeHtml(`/download/${record.id}`)}">${icons.download}<span>Save file</span></a>
+		<span class="file-actions">${primary}</span>
 	</div>`;
 }
 
@@ -219,7 +259,7 @@ export function renderPastePage(options: PastePageOptions): string {
 	if (record.encrypted) {
 		content = encryptedBody(record);
 	} else if (record.kind === "file") {
-		content = fileBody(record);
+		content = fileBody(record, options.unlocked);
 	} else if (options.inline !== null) {
 		content = `<pre class="code-block" data-code data-language="${escapeHtml(record.language ?? "plaintext")}"${record.markdown ? " data-markdown-source" : ""}><code>${escapeHtml(options.inline)}</code></pre>`;
 	} else {

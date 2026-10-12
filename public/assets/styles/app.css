@@ -1958,6 +1958,57 @@ kbd {
   min-width: 12rem;
 }
 
+/* media on the shared page */
+
+.media-frame {
+  margin: 0 0 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.media-frame img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-raised) 60%, transparent);
+}
+
+.media-frame video {
+  display: block;
+  width: 100%;
+  max-height: min(64vh, 34rem);
+  border-radius: var(--radius-sm);
+  background: #000;
+}
+
+.media-audio {
+  align-items: stretch;
+}
+
+.media-audio audio {
+  width: 100%;
+}
+
+.media-text {
+  max-height: 30rem;
+  overflow: auto;
+  margin: 0;
+}
+
+.file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
 .file-name {
   margin: 0;
   font-size: 0.9375rem;

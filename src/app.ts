@@ -1,17 +1,18 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type { AppBindings } from "./env";
-import { resolveConfig } from "./config";
+import type { AppBindings, AppEnv } from "./env";
+import { resolveConfig, type Config } from "./config";
 import { fail, isAppError, type AppError } from "./lib/errors";
 import { negotiate } from "./lib/negotiate";
 import { securityHeaders } from "./middleware/security";
 import { rateLimit } from "./middleware/rate-limit";
 import { bodyLimitBytes } from "./middleware/body-limit";
 import { createFromRequest, renderHomeWithError } from "./routes/create";
-import { getDownload, getPastePage, getRawPaste, revealPaste } from "./routes/paste";
+import { getDownload, getMedia, getPastePage, getRawPaste, revealPaste } from "./routes/paste";
 import { deleteManagedPaste, getMetadata, unlockPaste } from "./routes/manage";
 import { createLink, getLinkPage, goLink, revealLink } from "./routes/links";
 import { stores } from "./services/paste-store";
+import { resolveStorage } from "./services/storage-provider";
 import { renderApiDocs } from "./views/pages/docs";
 import { renderAboutPage } from "./views/pages/about";
 import { renderErrorPage } from "./views/pages/error";
@@ -107,6 +108,11 @@ export function createApp(): Hono<AppBindings> {
 		}
 		return c.json({ slips, links, files, bytes });
 	});
+	/**
+	 * Which object store is live and why — no secrets, no bucket contents. It exists
+	 * because storage is chosen by configuration, and the fastest way to check a
+	 * deploy is to ask it.
+	 */
 	api.get("/health", (c) => c.json({ ok: true, time: Date.now() }));
 	api.get("/config", (c) => {
 		const config = c.get("config");
@@ -122,6 +128,7 @@ export function createApp(): Hono<AppBindings> {
 				view_counting: config.viewCounting,
 				turnstile: config.turnstileEnabled,
 			},
+			storage: storageReport(c.env, config),
 		});
 	});
 
@@ -158,6 +165,7 @@ export function createApp(): Hono<AppBindings> {
 	app.get("/p/:id", (c) => getPastePage(c));
 	app.get("/p/:id/raw", (c) => getRawPaste(c));
 	app.get("/p/:id/download", (c) => getDownload(c));
+	app.get("/p/:id/media", (c) => getMedia(c));
 	app.get("/l/:id", (c) => getLinkPage(c));
 	app.post("/l/:id/go", (c) => goLink(c));
 
@@ -165,6 +173,7 @@ export function createApp(): Hono<AppBindings> {
 	app.get("/:id", (c) => getPastePage(c));
 	app.get("/:id/raw", (c) => getRawPaste(c));
 	app.get("/:id/download", (c) => getDownload(c));
+	app.get("/:id/media", (c) => getMedia(c));
 
 	return app;
 }
@@ -243,5 +252,19 @@ function titleForError(error: AppError): string {
 			return "That password didn't match";
 		default:
 			return "That didn't work";
+	}
+}
+
+/** Non-sensitive storage diagnostics for `GET /api/config`. */
+function storageReport(env: AppEnv, config: Config) {
+	try {
+		const resolved = resolveStorage(env);
+		return {
+			provider: resolved.provider,
+			reason: resolved.reason,
+			direct_links: Boolean(config.storageDirectOrigin),
+		};
+	} catch (error) {
+		return { provider: "none", reason: (error as Error).message, direct_links: false };
 	}
 }

@@ -10,6 +10,7 @@ export function initViewer(): void {
 
 	upgradeRelativeTimes();
 	wireCopyButtons();
+	wireFileText();
 	wireWrapToggle();
 	wireLetGo(pasteId);
 	wireRevealForm();
@@ -18,6 +19,48 @@ export function initViewer(): void {
 	void showRemoteCode();
 	void renderMarkdownIfRequested();
 	void initEncryptedView(pasteId);
+}
+
+/**
+ * "Read it here" for a text file: the same bytes the download button hands over,
+ * fetched on request and put in as text, never as markup. Fetched lazily so a
+ * visitor who only wants the file never pays for the body.
+ */
+function wireFileText(): void {
+	const button = qs<HTMLButtonElement>("[data-file-text-toggle]");
+	const block = qs<HTMLElement>("[data-file-text]");
+	if (!button || !block) return;
+	let loaded = false;
+
+	button.addEventListener("click", async () => {
+		const open = block.hidden;
+		block.hidden = !open;
+		button.setAttribute("aria-expanded", String(open));
+		const label = button.querySelector("span");
+		if (label) label.textContent = open ? "Put it away" : "Read it here";
+		if (!open || loaded) return;
+
+		const code = block.querySelector("code");
+		const source = block.dataset.src ?? "";
+		if (!code || !source) return;
+		code.textContent = "Reading…";
+		try {
+			const response = await fetch(source);
+			if (!response.ok) {
+				const detail = await response.json().catch(() => null);
+				throw new Error(detail && typeof detail.message === "string" ? detail.message : `HTTP ${response.status}`);
+			}
+			const text = await response.text();
+			const cap = 256 * 1024;
+			code.textContent =
+				text.length > cap
+					? `${text.slice(0, cap)}\n\n… first ${Math.round(cap / 1024)} KiB — the whole file is one download away.`
+					: text;
+			loaded = true;
+		} catch (error) {
+			code.textContent = `Couldn't read it here: ${error instanceof Error ? error.message : "unknown error"}`;
+		}
+	});
 }
 
 /** Copy buttons work on any page: they copy the value of the input they name. */
