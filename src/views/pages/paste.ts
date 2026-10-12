@@ -15,6 +15,14 @@ export interface PastePageOptions {
 	now: number;
 	/** Extra flash message, e.g. after a successful reveal. */
 	flash?: { tone: "info" | "warn" | "success"; body: string } | null;
+	/**
+	 * Absolute address of the byte route, for a file the visitor may want to hand to
+	 * somebody: an image at that URL is the image, with no page around it. Null when
+	 * the paste is locked, encrypted, burn-after-reading, or has no stored body — the
+	 * same conditions the preview is refused under, because a link you can copy is a
+	 * preview you cannot take back.
+	 */
+	mediaUrl?: string | null;
 }
 
 export function titleFor(record: PasteRecord): string {
@@ -185,7 +193,7 @@ function encryptedBody(record: PasteRecord): string {
  * a preview must not spend it; a password-locked file is excluded until the
  * visitor has unlocked, because the media route demands the same ticket.
  */
-function fileBody(record: PasteRecord, unlocked: boolean): string {
+function fileBody(record: PasteRecord, unlocked: boolean, mediaUrl: string | null): string {
 	const name = record.filename ?? "download";
 	const eligible = unlocked && !record.encrypted && !record.burnAfterRead && !record.passwordVerifier;
 	const media = eligible
@@ -199,7 +207,13 @@ function fileBody(record: PasteRecord, unlocked: boolean): string {
 	let note = "downloads rather than opens in the browser";
 
 	if (media.kind === "image") {
-		frame = `<figure class="media-frame"><img src="${escapeHtml(src)}" alt="${escapeHtml(name)}" loading="lazy" decoding="async"></figure>`;
+		const image = `<img src="${escapeHtml(src)}" alt="${escapeHtml(name)}" loading="lazy" decoding="async">`;
+		// The preview is the link: one click on the image is the image, full size, in a
+		// tab of its own. Nothing new is exposed — it is the same address the tag above
+		// already loads, which is why the copy field below appears for it too.
+		frame = `<figure class="media-frame">${
+			mediaUrl ? `<a href="${escapeHtml(mediaUrl)}" target="_blank" rel="noopener">${image}</a>` : image
+		}</figure>`;
 		note = "shown here, at its own size · the original still downloads";
 	} else if (media.kind === "video") {
 		frame = `<figure class="media-frame"><video src="${escapeHtml(src)}" controls playsinline preload="metadata"></video></figure>`;
@@ -216,8 +230,21 @@ function fileBody(record: PasteRecord, unlocked: boolean): string {
 		primary = `<button class="btn btn-secondary" type="button" data-file-text-toggle>${icons.raw}<span>Read it here</span></button>${primary}`;
 	}
 
+	const link =
+		mediaUrl && media.kind !== null && media.kind !== "text"
+			? `
+	<div class="copy-field media-link-field">
+		<label class="copy-label smallcaps" for="media-direct-link">Direct link to the ${escapeHtml(media.kind)}</label>
+		<div class="copy-row">
+			<input class="text-input mono" id="media-direct-link" type="text" readonly value="${escapeHtml(mediaUrl)}">
+			<button class="btn btn-secondary" type="button" data-copy-target="media-direct-link">${icons.copy}<span>Copy</span></button>
+		</div>
+		<p class="field-note">Opens on its own, no page around it · it stops working when the paste expires, and anyone who has it can see the file.</p>
+	</div>`
+			: "";
+
 	return `
-	${frame}
+	${frame}${link}
 	<div class="file-card rise-in">
 		<span class="file-icon">${icons.file}</span>
 		<div class="file-meta">
@@ -259,7 +286,7 @@ export function renderPastePage(options: PastePageOptions): string {
 	if (record.encrypted) {
 		content = encryptedBody(record);
 	} else if (record.kind === "file") {
-		content = fileBody(record, options.unlocked);
+		content = fileBody(record, options.unlocked, options.mediaUrl ?? null);
 	} else if (options.inline !== null) {
 		content = `<pre class="code-block" data-code data-language="${escapeHtml(record.language ?? "plaintext")}"${record.markdown ? " data-markdown-source" : ""}><code>${escapeHtml(options.inline)}</code></pre>`;
 	} else {

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { resolveConfig } from "../src/config";
 import { classifyMedia } from "../src/lib/media";
+import { CSP_FOR_CONTENT } from "../src/middleware/security";
 import { createPaste, readRow, request, resetStorage, deriveVerifier, testConfig } from "./helpers";
 
 /**
@@ -90,12 +91,31 @@ describe("GET /p/:id/media", () => {
 	});
 
 	// The header on a subresource does not govern the embedding page, but it does
-	// govern somebody who opens the link in a tab: that copy must not be a script.
-	it("keeps the content CSP on the response", async () => {
+	// govern the person who opens the link in a tab. A browser paints such a page
+	// with its own image, player or document element, and `default-src 'none'` alone
+	// would stop that — so the media URL names one source, itself, and nothing else.
+	it("lets a browser draw the media URL and keeps every other path inert", async () => {
 		const created = await uploadFile("pixel.png", PNG, "image/png");
 		const media = await request(`/p/${created.id}/media`);
-		expect(media.headers.get("Content-Security-Policy")).toContain("sandbox");
-		expect(media.headers.get("Content-Security-Policy")).toContain("default-src 'none'");
+		const csp = media.headers.get("Content-Security-Policy")!;
+		expect(csp).toContain("default-src 'none'");
+		expect(csp).toContain("img-src 'self'");
+		expect(csp).toContain("media-src 'self'");
+		expect(csp).toContain("frame-ancestors 'none'");
+		// `sandbox` is what would blank the native viewers, so it is off this one path.
+		expect(csp).not.toContain("sandbox");
+
+		// The same bytes as a download are not meant to be drawn, so they stay inert.
+		const download = await request(`/download/${created.id}`);
+		expect(download.headers.get("Content-Security-Policy")).toBe(CSP_FOR_CONTENT);
+	});
+
+	// The looser policy is decided by what the response actually is, not by the URL.
+	it("keeps the strict policy when the media URL has nothing to draw", async () => {
+		const created = await uploadFile("page.html", "<p>hi</p>", "text/html");
+		const refused = await request(`/p/${created.id}/media`);
+		expect(refused.status).toBe(415);
+		expect(refused.headers.get("Content-Security-Policy")).toContain("sandbox");
 	});
 
 	it("answers a conditional request without re-reading the body twice", async () => {
@@ -206,6 +226,45 @@ describe("the viewer page", () => {
 		const pdfPage = await (await request(`/p/${pdf.id}`, { headers: { Accept: "text/html" } })).text();
 		expect(pdfPage).toContain(`href="/p/${pdf.id}/media"`);
 		expect(pdfPage).not.toContain("<iframe");
+	});
+
+	it("offers a copyable direct link for bytes a browser can show on its own", async () => {
+		const image = await uploadFile("pixel.png", PNG, "image/png");
+		const page = await (await request(`/p/${image.id}`, { headers: { Accept: "text/html" } })).text();
+		const direct = `http://purepaste.test/p/${image.id}/media`;
+
+		expect(page).toContain(`value="${direct}"`);
+		expect(page).toContain('id="media-direct-link"');
+		expect(page).toContain('data-copy-target="media-direct-link"');
+		// The preview is the link: one click on the image is the image, in its own tab.
+		expect(page).toContain(`<a href="${direct}" target="_blank" rel="noopener"><img src="/p/${image.id}/media"`);
+		// Built from the request, because a hardcoded host would be wrong on a
+		// custom domain and on every preview URL.
+		expect(page).not.toContain('value="/p/' + image.id + '/media"');
+
+		// A text file is read here, not pointed at; the field would be a lie.
+		const text = await uploadFile("notes.txt", "hello", "text/plain");
+		const textPage = await (await request(`/p/${text.id}`, { headers: { Accept: "text/html" } })).text();
+		expect(textPage).not.toContain("media-direct-link");
+	});
+
+	it("does not hand out an address the media route would refuse", async () => {
+		const burned = await uploadFile("pixel.png", PNG, "image/png", { burn: "1" });
+		const burnPage = await (await request(`/p/${burned.id}`, { headers: { Accept: "text/html" } })).text();
+		expect(burnPage).not.toContain("media-direct-link");
+
+		const salt = crypto.getRandomValues(new Uint8Array(16));
+		const saltHex = [...salt].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+		const locked = await uploadFile("pixel.png", PNG, "image/png", {
+			password_verifier: await deriveVerifier("hunter2", saltHex, testConfig.passwordIterations),
+			password_salt: saltHex,
+			password_iterations: String(testConfig.passwordIterations),
+		});
+		const lockedPage = await (await request(`/p/${locked.id}`, { headers: { Accept: "text/html" } })).text();
+		// Not merely hidden behind the gate: the address is absent from the HTML, so a
+		// saved page cannot outlive the password.
+		expect(lockedPage).not.toContain("media-direct-link");
+		expect(lockedPage).not.toContain(`/p/${locked.id}/media`);
 	});
 
 	it("keeps markup as a download and keeps the page unbroken", async () => {

@@ -36,7 +36,27 @@ export function buildCsp(options: { turnstile?: boolean; mediaOrigin?: string } 
 /** CSP for routes that hand back untrusted bytes: inert, and never embeddable. */
 export const CSP_FOR_CONTENT = "default-src 'none'; sandbox; frame-ancestors 'none'";
 
+/**
+ * CSP for the copyable media URL, which is the same body but meant to be *drawn*.
+ *
+ * A direct media link is opened as a top-level page, and a browser paints that
+ * page with its own image, player or document element. `default-src 'none'` on its
+ * own stops exactly that, and `sandbox` would disable the native viewers too, so
+ * this policy names the one source they need — this URL — and nothing else.
+ * `getMedia` only ever answers with a type the media allowlist accepted (an
+ * image, audio, video or PDF, never markup), so no script or page can ride along.
+ * `object-src` is listed for the PDF viewer; `frame-ancestors` still keeps the
+ * bytes out of somebody else's frame, which is what `sandbox` was buying here.
+ */
+export const CSP_FOR_MEDIA =
+	"default-src 'none'; img-src 'self'; media-src 'self'; object-src 'self'; frame-ancestors 'none'; base-uri 'none'";
+
 const CONTENT_TAIL = /\/(raw|download|media)$/;
+
+/** The inline media URL: our own bytes, for the browser to render. */
+export function isMediaRoute(path: string): boolean {
+	return /\/media$/.test(path);
+}
 
 export function isContentRoute(path: string): boolean {
 	if (path.startsWith("/raw/") || path.startsWith("/download/")) return true;
@@ -63,6 +83,12 @@ export function securityHeaders(): MiddlewareHandler<AppBindings> {
 		const path = c.req.path;
 		const contentRoute = isContentRoute(path);
 		const response = c.res;
+		// The inline media URL gets the one policy that lets a browser draw it, and
+		// only when the bytes really are a renderable type — a 415 or a refusal is
+		// still an HTML page and stays under the strict policy.
+		const servedType = response.headers.get("Content-Type") ?? "";
+		const mediaRoute =
+			isMediaRoute(path) && /^(image|audio|video)\/|^application\/pdf\b/.test(servedType.replace(/;.*$/, ""));
 		const headers = new Headers(response.headers);
 
 		headers.set("X-Content-Type-Options", "nosniff");
@@ -74,12 +100,14 @@ export function securityHeaders(): MiddlewareHandler<AppBindings> {
 		headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
 		headers.set(
 			"Content-Security-Policy",
-			contentRoute
-				? CSP_FOR_CONTENT
-				: buildCsp({
-						turnstile: c.get("config")?.turnstileEnabled === true,
-						mediaOrigin: c.get("config")?.storageDirectOrigin,
-					}),
+			mediaRoute
+				? CSP_FOR_MEDIA
+				: contentRoute
+					? CSP_FOR_CONTENT
+					: buildCsp({
+							turnstile: c.get("config")?.turnstileEnabled === true,
+							mediaOrigin: c.get("config")?.storageDirectOrigin,
+						}),
 		);
 		headers.set("Cross-Origin-Resource-Policy", "same-origin");
 

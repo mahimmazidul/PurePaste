@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import { deferrer } from "../lib/ctx";
 import type { AppBindings } from "../env";
+import type { PasteRecord } from "../types";
 import { verifyPassword, verifyUnlockTicket } from "../lib/crypto";
 import { escapeHtml } from "../lib/format";
 import { negotiate } from "../lib/negotiate";
@@ -10,9 +11,21 @@ import { claimBurn, deletePaste, loadPaste, openBody, stores } from "../services
 import { recordView } from "../services/views";
 import { renderPastePage } from "../views/pages/paste";
 import { renderErrorPage } from "../views/pages/error";
+import { CSP_FOR_CONTENT, CSP_FOR_MEDIA } from "../middleware/security";
 
 /** Bodies larger than this are streamed to the browser instead of inlined into a page. */
 const MAX_INLINE_RENDER_BYTES = 1024 * 1024;
+
+/**
+ * The byte route as a whole URL, for a file whose preview is worth being able to hand
+ * to somebody. Built from the incoming request, so it is right on a custom domain, on
+ * `workers.dev`, and on a preview URL without anything configuring it.
+ */
+function mediaUrl(c: Context<AppBindings>, record: PasteRecord): string | null {
+	if (record.kind !== "file" || !record.objectKey) return null;
+	if (record.encrypted || record.burnAfterRead || record.passwordVerifier) return null;
+	return new URL(`/p/${encodeURIComponent(record.id)}/media`, c.req.url).href;
+}
 
 export function cookieNameFor(id: string): string {
 	return `pp_${id}`;
@@ -102,7 +115,9 @@ export async function getPastePage(c: Context<AppBindings>): Promise<Response> {
 
 	if (result.status === "needs-reveal") {
 		// The gate is rendered without ever reading the body.
-		return c.html(renderPastePage({ config, record, inline: null, unlocked: true, now }));
+		return c.html(
+			renderPastePage({ config, record, inline: null, unlocked: true, now, mediaUrl: mediaUrl(c, record) }),
+		);
 	}
 	if (!unlock.unlocked) {
 		return c.html(renderPastePage({ config, record, inline: null, unlocked: false, now }));
@@ -137,7 +152,7 @@ export async function getPastePage(c: Context<AppBindings>): Promise<Response> {
 
 	recordView(c.env, config, record.id, deferrer(c));
 
-	return c.html(renderPastePage({ config, record, inline, unlocked: true, now }));
+	return c.html(renderPastePage({ config, record, inline, unlocked: true, now, mediaUrl: mediaUrl(c, record) }));
 }
 
 /** Raw bytes. Never served for a paste that has not been revealed or unlocked. */
@@ -261,7 +276,7 @@ export async function getMedia(c: Context<AppBindings>): Promise<Response> {
 	const body = await openBody(c.env, record, deferrer(c));
 	if (body.kind === "missing") return notAvailable(c, "missing", false);
 
-	const headers = objectHeaders(media.contentType);
+	const headers = objectHeaders(media.contentType, CSP_FOR_MEDIA);
 	const filename = record.filename ?? `${record.id}.${media.kind === "pdf" ? "pdf" : media.kind}`;
 	headers.set("Content-Disposition", contentDisposition(filename, true));
 	// Hotlinked media is public-by-link like the page itself, so caching is only
@@ -419,12 +434,17 @@ function textResponse(text: string): Response {
 	});
 }
 
-function objectHeaders(contentType: string): Headers {
+/**
+ * Headers for a body that is handed over as-is. `policy` is the CSP for the way the
+ * bytes are meant to be used: inert by default, and the drawing policy only for the
+ * inline media URL, which `getMedia` restricts to renderable types anyway.
+ */
+function objectHeaders(contentType: string, policy: string = CSP_FOR_CONTENT): Headers {
 	const headers = new Headers();
 	headers.set("Content-Type", contentType);
 	headers.set("X-Content-Type-Options", "nosniff");
 	headers.set("Cache-Control", "no-store");
-	headers.set("Content-Security-Policy", "default-src 'none'; sandbox; frame-ancestors 'none'");
+	headers.set("Content-Security-Policy", policy);
 	headers.set("Referrer-Policy", "no-referrer");
 	headers.set("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet");
 	return headers;

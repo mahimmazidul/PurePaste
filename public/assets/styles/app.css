@@ -2236,6 +2236,19 @@ kbd {
   padding-top: 1.5rem;
 }
 
+.media-link-field {
+  margin: 0.9rem 0 0;
+}
+
+.media-link-field .text-input {
+  font-size: 0.8rem;
+}
+
+/* The preview is the link, so the anchor has to lay out like the image did. */
+.media-frame a {
+  display: block;
+}
+
 .copy-field {
   margin: 0.9rem 0;
 }
