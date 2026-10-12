@@ -281,7 +281,7 @@ describe("cleanup against a plugged-in store", () => {
 				asked.push(keys);
 				return { deleted: keys.length, failed: [] };
 			},
-		} as unknown as BlobStore;
+		} as unknown as BlobPool;
 
 		const report = await sweep({ meta: stores(testEnv).meta, objects: recorder }, testConfig);
 
@@ -301,7 +301,7 @@ describe("cleanup against a plugged-in store", () => {
 			async delete(keys: string[]) {
 				return { deleted: 0, failed: keys };
 			},
-		} as unknown as BlobStore;
+		} as unknown as BlobPool;
 
 		const report = await sweep({ meta: stores(testEnv).meta, objects: refusing }, testConfig);
 
@@ -797,6 +797,7 @@ function sampleRecord(): PasteRecord {
 		sizeBytes: 12,
 		content: "hello there",
 		objectKey: null,
+		blobStore: null,
 		passwordSalt: null,
 		passwordVerifier: null,
 		passwordIterations: null,
@@ -895,6 +896,9 @@ describe("Supabase runtime mirror", () => {
 		expect(row.id).toBe("abc123");
 		expect(row.burn_after_read).toBe(false);
 		expect(row.expires_at).toBe(2000);
+		// The deployed table has no blob_store column, and a payload naming one is a
+		// 400 on every write, so which store holds the body stays out of the mirror.
+		expect(row).not.toHaveProperty("blob_store");
 		expect(store.status.writes).toBe(1);
 		expect(store.status.lastError).toBeNull();
 	});
@@ -1005,11 +1009,20 @@ describe("the hourly cron", () => {
 	 * after the cron's work is genuinely finished.
 	 */
 	const tasks: Promise<unknown>[] = [];
-	const ctx = { waitUntil: (task: Promise<unknown>) => void tasks.push(task), passThroughOnException: () => undefined };
+	// Both arguments below are stand-ins: the handler is handed only the members it reads,
+	// so neither object is a real controller or context. They are cast through the
+	// handler's own signature rather than asserted to a Cloudflare type - the current
+	// ExecutionContext also demands `exports`, `tracing` and `abort`, and inventing those
+	// to satisfy a compiler is worse than admitting what this is.
+	type CronArgs = Parameters<NonNullable<typeof worker.scheduled>>;
+	const ctx = {
+		waitUntil: (task: Promise<unknown>) => void tasks.push(task),
+		passThroughOnException: () => undefined,
+	} as unknown as CronArgs[2];
 
 	async function runCron(scheduledTime: number): Promise<void> {
 		tasks.length = 0;
-		await worker.scheduled?.({ type: "scheduled", cron: "17 * * * *", scheduledTime, noCache: false }, testEnv, ctx);
+		await worker.scheduled?.({ cron: "17 * * * *", scheduledTime } as unknown as CronArgs[0], testEnv, ctx);
 		await Promise.all(tasks);
 	}
 

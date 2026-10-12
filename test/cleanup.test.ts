@@ -3,6 +3,7 @@ import { sweep } from "../src/services/cleanup";
 import { stores, type Stores } from "../src/services/paste-store";
 import type { ObjectStore } from "../src/services/object-store";
 import { createPaste, objectKeys, readRow, resetStorage, testConfig, testEnv } from "./helpers";
+import type { BlobPool } from "../src/services/storage-provider";
 
 const SMALL_CONFIG = { ...testConfig, cleanupBatchSize: 2, cleanupMaxBatches: 2 };
 
@@ -17,7 +18,7 @@ function flakyStores(failingKeys: Set<string>): Stores {
 			return { deleted: result.deleted, failed: [...result.failed, ...blocked] };
 		},
 	};
-	return { meta: real.meta, objects: fake as unknown as ObjectStore };
+	return { meta: real.meta, objects: fake as unknown as BlobPool };
 }
 
 async function expire(id: string, msAgo = 1000): Promise<void> {

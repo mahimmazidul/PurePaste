@@ -182,7 +182,7 @@ describe("GET /p/:id/media", () => {
 			body: JSON.stringify({ verifier }),
 			headers: { "Content-Type": "application/json", Accept: "application/json" },
 		});
-		const cookie = (unlock.headers.getSetCookie?.()[0] ?? unlock.headers.get("Set-Cookie") ?? "").split(";")[0];
+		const cookie = (unlock.headers.getSetCookie?.()[0] ?? unlock.headers.get("Set-Cookie") ?? "").split(";")[0] ?? "";
 		expect(cookie).toContain("pp_");
 
 		const allowed = await request(`/p/${created.id}/media`, { headers: { cookie } });
