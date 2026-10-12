@@ -1,0 +1,17 @@
+blank_issues_enabled: false
+contact_links:
+  - name: How it behaves, endpoint by endpoint
+    url: https://purepaste.byaislop.workers.dev/docs
+    about: Every route, limit, error code and header, served by the instance you are actually using - so it cannot drift from what that instance does
+  - name: Report a security problem
+    url: https://github.com/mahimmazidul/PurePaste/security/policy
+    about: What counts as a vulnerability here, and the private report form - read the policy before posting anything in public
+  - name: Abuse, illegal content, takedown
+    url: https://www.cloudflare.com/abuse/
+    about: >-
+      The Worker keeps metadata and small unencrypted slips; files live in whichever store
+      sits behind it, and everything expires. Report to that host, with the paste id and its
+      expiry.
+  - name: Anything else
+    url: https://github.com/mahimmazidul/PurePaste/issues/new?template=feature-request.yml
+    about: There is no forum, no chat and no Discord for this project, which is consistent with it having no accounts. An issue is the whole community space

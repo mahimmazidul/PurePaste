@@ -1,0 +1,112 @@
+name: Bug report
+description: A paste, a command or a page that does not do what the README and /docs say it does
+title: "[bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Two rules before you type anything, because this is a paste service:
+
+        - **Do not paste the contents of a paste into this form.** A paste id, its expiry and its kind are enough to work with — the id is unguessable, and after the expiry there is nothing left to find.
+        - **Never include the part after the `#`.** For an encrypted slip that fragment is the key, and the management link is the delete permission. Both belong in your browser and nowhere else.
+
+        If the problem is that something could be read, spent or overwritten that should not have been, that is a security report, not a bug: use ["Report a vulnerability"](https://github.com/mahimmazidul/PurePaste/security/advisories/new) under the Security tab.
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which part
+      description: Pick the closest one; several is fine to say in the next box.
+      options:
+        - Sealing a slip of text
+        - Uploading a file
+        - Creating a short link
+        - Opening a paste (page)
+        - The media preview or direct media link
+        - Download or raw bytes
+        - Password or end-to-end encryption
+        - Burn after reading
+        - The management key, let-go or status
+        - Expiry and the cleanup cron
+        - The HTTP API (curl, a script)
+        - The pages, styles or client script
+        - Something else
+    validations:
+      required: true
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where you saw it
+      options:
+        - The running instance at purepaste.byaislop.workers.dev
+        - My own deployment of this repository
+        - Local `npm run dev` (workerd on :8787)
+        - Reading the code only
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what you expected instead
+      description: Both halves. "The image did not show" is a start; "the preview is a 0×0 box while `GET /p/<id>/media` returns 200 image/png" is reportable.
+      placeholder: |
+        Sealed a 320x200 PNG with expire=3d. The viewer page shows a broken image.
+        Expected the preview to draw, as it does for a JPEG of the same size.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: The exact commands, in order
+      description: Copy what you actually ran. If it is a browser thing, say the browser and the width, and what you clicked.
+      render: bash
+      placeholder: |
+        curl -sS -X POST https://purepaste.byaislop.workers.dev/api/pastes \
+          -F kind=file -F expire=3d -F "file=@shot.png;type=image/png"
+        curl -sSI https://purepaste.byaislop.workers.dev/p/<id>/media
+    validations:
+      required: true
+
+  - type: textarea
+    id: instance
+    attributes:
+      label: What the instance says about itself
+      description: The JSON from `GET /api/config` on the instance you used (or from your own `wrangler.jsonc` vars if it is local). It has the limits, the storage backends and the features, and nothing secret. If you can, add `npx wrangler --version` and the Node version.
+      render: json
+      placeholder: |
+        curl -s https://purepaste.byaislop.workers.dev/api/config
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Anything the Worker logged
+      description: For your own deployment, `npx wrangler tail` while you reproduce it. Local dev can show the cron instead - `curl "http://localhost:8787/cdn-cgi/local/scheduled?format=json&cron=17+*+*+*+*"`. Redact nothing from the logs and nothing will need redacting, but check before posting.
+      render: shell
+
+  - type: textarea
+    id: ids
+    attributes:
+      label: Paste ids involved
+      description: Just the ids, and the kind and expiry. No contents, no key fragment, no management token.
+      placeholder: "8fk2mqxv3t (file, expires 2026-10-15T03:00Z)"
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you post
+      options:
+        - label: I put no paste contents, password or management key in this form.
+          required: true
+        - label: I reproduced it at least twice, or explained exactly what I did once.
+          required: true
+        - label: I looked at /docs and the troubleshooting section of the README first.
+          required: false
+        - label: I am willing to send a pull request, and I have read docs/CONTRIBUTING.md.
+          required: false

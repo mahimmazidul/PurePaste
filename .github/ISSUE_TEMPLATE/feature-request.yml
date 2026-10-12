@@ -1,0 +1,63 @@
+name: Feature request
+description: Something you want to be able to do with a slip, a link or a file
+title: "[feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The useful thing here is the *use*, not the implementation. "I want to send a 40 MB video to my dad without him installing anything" is a design brief; "add a chunked upload endpoint" is one possible answer to it, and often not the best one.
+
+        This project has a short list of things it will not do — no listing of pastes, no accounts, no analytics, nothing fetched from a third party, no storage that outlives its expiry, no store mirroring another store as insurance. **If the feature needs one of those to exist, the honest outcome is a fork, and the MIT licence means nobody has to argue about it first.** The full list is at the end of `docs/CONTRIBUTING.md`.
+
+  - type: textarea
+    attributes:
+      label: What you are trying to do
+      description: Who does it, how often, and what you do instead today.
+      placeholder: |
+        I paste a stack trace into a terminal-friendly thing and send it to one other person. Today I use a file, because the text slip gets truncated in their chat app.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: What it would look like from outside
+      description: The request you would type, or the button you would press, and the answer you would expect. Real strings beat adjectives.
+      render: bash
+      placeholder: |
+        curl -sS -X POST https://…/api/pastes -F kind=file -F expire=3d -F burn=1 -F "file=@trace.txt"
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: What it must not cost
+      description: Storage that never expires, a page that loads something from another origin, a read that spends a one-time paste, an unguessable id made guessable - name the things you care about, and the ones you would trade away.
+    validations:
+      required: true
+
+  - type: dropdown
+    attributes:
+      label: How much do you want to build it?
+      options:
+        - I will send a pull request, and I have read docs/CONTRIBUTING.md
+        - I will send a pull request if someone points me at the right file
+        - I would take guidance on the design and then write it
+        - Describing it is all I can do right now, and that is fine
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Anything you considered and rejected
+      description: Half-answers are useful. "We could put it in the URL fragment, but then the link is enormous" tells a reader what constraint you already found.
+
+  - type: checkboxes
+    attributes:
+      label: Before you post
+      options:
+        - label: I checked /docs and the README first, and this is not already there under a name I did not guess.
+          required: true
+        - label: I am not asking for a paste to outlive the 30 day ceiling or for a way to list what other people sealed.
+          required: true
